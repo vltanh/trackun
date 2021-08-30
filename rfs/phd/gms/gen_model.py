@@ -35,13 +35,13 @@ class Model():
 
         # Birth parameters
         self.L_birth = 4
-        self.w_birth = [.03, .03, .03, .03]
-        self.m_birth = [
-            np.array([0., 0., 0., 0.]),
-            np.array([400., 0., -600., 0.]),
-            np.array([-800., 0., -200., 0.]),
-            np.array([-200., 0., 800., 0.])
-        ]
+        self.w_birth = np.array([.03, .03, .03, .03])
+        self.m_birth = np.array([
+            [0., 0., 0., 0.],
+            [400., 0., -600., 0.],
+            [-800., 0., -200., 0.],
+            [-200., 0., 800., 0.]
+        ])
 
         B_birth = np.zeros((self.L_birth, self.x_dim, self.x_dim))
         B_birth[0, :, :] = np.diag([10, 10, 10, 10])
@@ -50,7 +50,6 @@ class Model():
         B_birth[3, :, :] = np.diag([10, 10, 10, 10])
 
         self.P_birth = B_birth @ B_birth.transpose((0, 2, 1))
-        self.P_birth = [x for x in self.P_birth]
 
         # Observation model
         self.H = np.array([

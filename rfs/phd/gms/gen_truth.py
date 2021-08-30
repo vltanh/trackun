@@ -3,7 +3,7 @@ import numpy as np
 
 class Truth:
     def __init__(self, model) -> None:
-        self.K = 100
+        self.K = 300
         self.X = [[] for _ in range(self.K)]
         self.N = np.zeros(self.K).astype(int)
         self.L = [[] for _ in range(self.K)]
@@ -49,6 +49,7 @@ class Truth:
 
         for k in range(self.K):
             self.X[k] = np.vstack(self.X[k])
+            self.track_list[k] = np.array(self.track_list[k])
 
 
 def gen_truth(model):

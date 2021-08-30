@@ -11,14 +11,18 @@ import numpy as np
 np.random.seed(3698)
 
 nruns = 100
-meter = []
 
-bar = tqdm(range(nruns))
-for i in bar:
-    model = gen_model()
+model = gen_model()
+scenarios = []
+for i in range(nruns):
     truth = gen_truth(model)
     meas = gen_meas(model, truth)
+    scenarios.append(meas)
 
+meter = []
+
+bar = tqdm(scenarios)
+for meas in bar:
     now = time.time()
     run_filter(model, meas)
     elapsed = time.time() - now

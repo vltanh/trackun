@@ -15,4 +15,4 @@ meas = gen_meas(model, truth)
 
 w_upds, m_upds, P_upds = run_filter(model, meas)
 
-visualize(w_upds, m_upds, P_upds, meas, truth)
+visualize(w_upds, m_upds, P_upds, model, meas, truth)
