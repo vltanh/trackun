@@ -16,7 +16,7 @@ for _ in range(nruns):
     obs = model.gen_obs(truth)
     scenarios.append(obs)
 
-filt = PHD_GMS_Filter(model)
+filt = CPHD_GMS_Filter(model)
 
 meter = []
 bar = tqdm(scenarios)
