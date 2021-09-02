@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
+from tqdm import tqdm
 
 COLOR = ['green', 'purple']
 
@@ -74,33 +75,33 @@ def visualize_est(ms, Ps, method, ax, color):
 
 
 def graph_truth_count(cnts, ax, color):
-    ax.plot(range(len(cnts)), cnts,
+    ax.plot(range(1, len(cnts) + 1), cnts,
             label=f'True count', color=color)
 
 
 def graph_count(cnts, method, ax, color):
-    ax.scatter(range(len(cnts)), cnts,
+    ax.scatter(range(1, len(cnts) + 1), cnts,
                label=f'{method}', color=color)
 
 
-def visualize(w_upds, m_upds, P_upds, methods, model=None, obs=None, truth=None):
-    for k in range(1, obs.K + 1):
+def visualize(w_ests, m_ests, P_ests, methods, model=None, obs=None, truth=None):
+    for k in tqdm(range(obs.K)):
         fig, ax = plt.subplots(1, 2, figsize=(20, 10), dpi=100)
 
         if model is not None:
             visualize_model(model, ax[0])
-            graph_truth_count([len(x) for x in truth.X[:k]], ax[1], 'blue')
+            graph_truth_count([len(x) for x in truth.X[:k + 1]], ax[1], 'blue')
 
         if truth is not None:
-            visualize_truth(truth, k, ax[0])
+            visualize_truth(truth, k+1, ax[0])
 
         if obs is not None:
-            visualize_obs(obs.Z[k-1], ax[0])
+            visualize_obs(obs.Z[k], ax[0])
 
-        for i in range(len(w_upds)):
-            visualize_est(m_upds[i][k], P_upds[i][k],
+        for i in range(len(w_ests)):
+            visualize_est(m_ests[i][k], P_ests[i][k],
                           methods[i], ax[0], color=COLOR[i])
-            graph_count([len(w) for w in w_upds[i][:k]],
+            graph_count([len(w) for w in w_ests[i][:k+1]],
                         methods[i], ax[1], COLOR[i])
 
         ax[0].set_xlim(-1000, 1000)
@@ -113,8 +114,8 @@ def visualize(w_upds, m_upds, P_upds, methods, model=None, obs=None, truth=None)
         ax[1].legend(loc='upper right')
         ax[1].set_title('Number of objects')
 
-        plt.suptitle(f'Time: {k:3d}')
+        plt.suptitle(f'Time: {k+1:3d}')
         fig.tight_layout()
-        plt.savefig(f'output/{k:03d}')
+        plt.savefig(f'output/{k+1:03d}')
         # plt.show()
         plt.close(fig)

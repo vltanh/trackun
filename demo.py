@@ -2,23 +2,42 @@ from examples.models import *
 from examples.visualize import visualize
 from trackun.filters import *
 
+from time import time
+
 import numpy as np
 np.random.seed(3698)
 
+filters_name = ['GM-CPHD', 'GM-PHD']
+
+print('Begin generating examples...')
 model = LinearGaussianWithBirthModel()
 truth = model.gen_truth()
 obs = model.gen_obs(truth)
+print('Generation done!')
+print('================')
 
-filt1 = CPHD_GMS_Filter(model)
-w_upds1, m_upds1, P_upds1 = filt1.run(obs.Z)
+print('Begin filtering...')
+filters = [
+    CPHD_GMS_Filter(model),
+    PHD_GMS_Filter(model)
+]
 
-filt2 = PHD_GMS_Filter(model)
-w_upds2, m_upds2, P_upds2 = filt2.run(obs.Z)
+Z = obs.Z
+ests = []
+for n, f in zip(filters_name, filters):
+    start = time()
+    est = f.run(Z)
+    elapsed = time() - start
 
+    ests.append(est)
+    print(f'[{n}] Done! Took {elapsed} (s)')
+print('Filtering done!')
+print('================')
+
+print('Begin visualizing...')
 visualize(
-    [w_upds1, w_upds2],
-    [m_upds1, m_upds2],
-    [P_upds1, P_upds2],
-    ['GM-CPHD', 'GM-PHD'],
+    *list(zip(*ests)),
+    filters_name,
     model, obs, truth
 )
+print('Visualization done!')
