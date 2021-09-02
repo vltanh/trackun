@@ -1,5 +1,6 @@
 import numpy as np
 import numpy.linalg as la
+import numba
 
 
 def prune(ws, ms, Ps, thres):
@@ -12,6 +13,7 @@ def cap(ws, ms, Ps, L_max):
     return ws[indices], ms[indices], Ps[indices]
 
 
+# @numba.jit(nopython=True)
 def close(g1, g2, thres):
     k = g1[1].shape[0]
     iS2 = la.inv(g2[2])

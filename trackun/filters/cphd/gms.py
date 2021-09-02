@@ -5,9 +5,12 @@ from trackun.common.gating import gate
 import numpy as np
 from scipy.stats.distributions import chi2
 
+import numba
+
 __all__ = ['CPHD_GMS_Filter']
 
 
+# @numba.jit(nopython=True)
 def esf(Z):
     n_z = len(Z)
     if n_z == 0:
@@ -28,6 +31,208 @@ def esf(Z):
     return F[i_nminus]
 
 
+def esf_batch(Z):
+    nz, dz = Z.shape
+    if dz == 0:
+        return np.ones((nz, 1))
+
+    F = np.zeros((2, nz, dz + 1))
+    F[0, :, 1] = Z[:, 0]
+
+    i_n, i_nminus = 1, 0
+    for n in range(2, dz + 1):
+        F[i_n, :, 1] = F[i_nminus, :, 1] + Z[:, n - 1]
+        for k in range(2, n):
+            F[i_n, :, k] = F[i_nminus, :, k] + \
+                Z[:, n - 1] * F[i_nminus, :, k - 1]
+        F[i_n, :, n] = Z[:, n - 1] * F[i_nminus, :, n - 1]
+        i_n, i_nminus = i_nminus, i_n
+
+    F[i_nminus, :, 0] = 1
+    return F[i_nminus]
+
+
+# @numba.jit(nopython=True)
+def predict_cardinality(N_max, P_S, sum_w_birth, c_upds_k):
+    aux = np.zeros(N_max + 1)
+    aux[1:] = np.cumsum(np.log(np.arange(1, N_max + 1)))
+
+    # Surviving
+    surviving_c_preds = np.zeros(N_max + 1)
+    for i in range(N_max + 1):
+        # terms = np.zeros(N_max + 1)
+        # for j in range(i, N_max + 1):
+        #     terms[j] = np.exp(
+        #         np.log(np.arange(1, j + 1)).sum()
+        #         # aux[j]
+        #         - np.log(np.arange(1, i + 1)).sum()
+        #         # - aux[i]
+        #         - np.log(np.arange(1, j - i + 1)).sum()
+        #         # - aux[j-i]
+        #         + j * np.log(P_S)
+        #         + (j - i) * np.log(1. - P_S)
+        #     )
+        terms = np.zeros(N_max + 1)
+        terms[i:] = np.exp(
+            aux[i:] - aux[i] - aux[:N_max - i + 1]
+            + np.arange(i, N_max + 1) * np.log(P_S)
+            + np.arange(0, N_max - i + 1) * np.log1p(-P_S)
+        )
+        surviving_c_preds[i] = (terms * c_upds_k).sum()
+
+    # Birth
+    c_preds_k = np.zeros(N_max + 1)
+    for i in range(N_max + 1):
+        # terms = np.zeros(N_max + 1)
+        # for j in range(i + 1):
+        #     terms[j] = np.exp(
+        #         - sum_w_birth
+        #         + (i - j) * log_sum_w_birth
+        #         - np.sum(np.log(np.arange(1, i - j + 1)))
+        #         # - aux[i - j]
+        #     )
+        terms = np.zeros(N_max + 1)
+        terms[:i+1] = np.exp(
+            - sum_w_birth
+            + np.arange(i, -1, -1) * np.log(sum_w_birth)
+            - aux[:i+1][::-1]
+        )
+        c_preds_k[i] = (terms * surviving_c_preds).sum()
+
+    # Normalize
+    c_preds_k = c_preds_k / c_preds_k.sum()
+
+    return c_preds_k
+
+
+# @numba.jit(nopython=True)
+def compute_upsilon1_D_row(N2, n,
+                           lambda_c, P_D,
+                           log_sum_w_preds_k, esfvals_D,
+                           aux):
+    N = min(N2 - 1, n)
+
+    # terms1_D = np.zeros((N + 1, N2))
+    # for i in range(N2):
+    #     for j in range(N + 1):
+    #         if n >= j + 1:
+    #             terms1_D[j, i] = np.exp(
+    #                 - lambda_c
+    #                 + ((N2 - 1) - j) * np.log(lambda_c)
+    #                 # + np.sum(np.log(np.arange(1, n + 1)))
+    #                 + aux[n]
+    #                 # - np.sum(np.log(np.arange(1, n - (j + 1) + 1)))
+    #                 - aux[n - (j + 1)]
+    #                 + (n - (j + 1)) * np.log1p(-P_D)
+    #                 - (j + 1) * log_sum_w_preds_k
+    #             ) * esfvals_D[j, i]
+    terms1_D = np.zeros(N + 1)
+    N_ = min(N + 1, n)
+    terms1_D[:N_] = np.exp(
+        - lambda_c
+        + np.arange(N2 - 1, N2 - N_ - 1, -1) * np.log(lambda_c)
+        + aux[n]
+        - aux[n - N_:n][::-1]
+        + np.arange(n - 1, n - N_ - 1, -1) * np.log1p(-P_D)
+        - np.arange(1, N_ + 1) * log_sum_w_preds_k
+    )
+    return (esfvals_D[:N + 1].T * terms1_D).sum(1)
+
+
+# @numba.jit(nopython=True)
+def compute_upsilon1_E_elem(N2, n,
+                            lambda_c, P_D,
+                            log_sum_w_preds_k, esfvals_E,
+                            aux):
+    N = min(N2, n)
+
+    # terms1_E = np.zeros(N + 1)
+    # for j in range(N + 1):
+    #     if n >= j + 1:
+    #         terms1_E[j] = np.exp(
+    #             - lambda_c
+    #             + (N2 - j) * np.log(lambda_c)
+    #             + np.sum(np.log(np.arange(1, n + 1)))
+    #             # + aux[n]
+    #             - np.sum(np.log(np.arange(1, n - (j + 1) + 1)))
+    #             # - aux[n - (j + 1)]
+    #             + (n - (j + 1)) * np.log1p(-P_D)
+    #             - (j + 1) * log_sum_w_preds_k
+    #         )
+    terms1_E = np.zeros(N + 1)
+    N_ = min(N + 1, n)
+    terms1_E[:N_] = np.exp(
+        - lambda_c
+        + np.arange(N2, N2 - N_, -1) * np.log(lambda_c)
+        + aux[n]
+        - aux[n - N_:n][::-1]
+        + np.arange(n - 1, n - N_ - 1, -1) * np.log1p(-P_D)
+        - np.arange(1, N_ + 1) * log_sum_w_preds_k
+    )
+    return (terms1_E * esfvals_E[:N + 1]).sum()
+
+
+# @numba.jit(nopython=True)
+def compute_upsilon0_E_elem(N2, n,
+                            lambda_c, P_D,
+                            log_sum_w_preds_k, esfvals_E,
+                            aux):
+    N = min(N2, n)
+
+    # terms0_E = np.zeros(N + 1)
+    # for j in range(N + 1):
+    #     terms0_E[j] = np.exp(
+    #         - lambda_c
+    #         + (N2 - j) * np.log(lambda_c)
+    #         + np.sum(np.log(np.arange(1, n + 1)))
+    #         # + aux[n]
+    #         - np.sum(np.log(np.arange(1, n - j + 1)))
+    #         # - aux[n - j]
+    #         + (n - j) * np.log(1. - P_D)
+    #         - j * log_sum_w_preds_k
+    #     )
+    terms0_E = np.zeros(N + 1)
+    terms0_E[:N + 1] = np.exp(
+        - lambda_c
+        + np.arange(N2, N2 - N - 1, -1) * np.log(lambda_c)
+        + aux[n]
+        - aux[n - N:n + 1][::-1]
+        + np.arange(n, n - N - 1, -1) * np.log1p(-P_D)
+        - np.arange(0, N + 1) * log_sum_w_preds_k
+    )
+
+    return (terms0_E * esfvals_E[:N+1]).sum()
+
+
+# @numba.jit(nopython=True)
+def compute_upsilons(N_max, N2, lambda_c, P_D, w_preds_k, esfvals_E, esfvals_D):
+    upsilon0_E = np.zeros(N_max + 1)
+    upsilon1_E = np.zeros(N_max + 1)
+    upsilon1_D = np.zeros((N_max + 1, N2))
+
+    log_sum_w_preds_k = np.log(np.sum(w_preds_k))
+    aux = np.zeros(max(N_max, N2) + 1)
+    aux[1:] = np.cumsum(np.log(np.arange(1, max(N_max, N2) + 1)))
+
+    for n in range(N_max + 1):
+        upsilon0_E[n] = \
+            compute_upsilon0_E_elem(N2, n,
+                                    lambda_c, P_D,
+                                    log_sum_w_preds_k, esfvals_E, aux)
+
+        upsilon1_E[n] = \
+            compute_upsilon1_E_elem(N2, n,
+                                    lambda_c, P_D,
+                                    log_sum_w_preds_k, esfvals_E, aux)
+        if N2 > 0:
+            upsilon1_D[n, :] = \
+                compute_upsilon1_D_row(N2, n,
+                                       lambda_c, P_D,
+                                       log_sum_w_preds_k, esfvals_D, aux)
+
+    return upsilon0_E, upsilon1_E, upsilon1_D
+
+
 class CPHD_GMS_Filter:
     def __init__(self, model, use_gating=True) -> None:
         self.model = model
@@ -45,16 +250,17 @@ class CPHD_GMS_Filter:
     def run(self, Z):
         K = len(Z)
 
-        w_upds = [np.array([1.])]
-        m_upds = [np.zeros((1, self.model.x_dim))]
-        P_upds = [np.eye(self.model.x_dim)[np.newaxis, :]]
-        c_upds = [np.hstack([np.array([1.]), np.zeros(self.N_max)])]
+        w_upds_k = np.array([1.])
+        m_upds_k = np.zeros((1, self.model.x_dim))
+        P_upds_k = np.eye(self.model.x_dim)[np.newaxis, :]
+        c_upds_k = np.zeros(1 + self.N_max)
+        c_upds_k[0] = 1.
 
-        w_ests, m_ests, P_ests = [[]], [[]], [[]]
+        w_ests, m_ests, P_ests = [], [], []
 
-        for k in range(1, K + 1):
+        for k in range(K):
             # == Predict ==
-            N = w_upds[-1].shape[0]
+            N = w_upds_k.shape[0]
             L = self.model.L_birth
 
             w_preds_k = np.empty((N+L,))
@@ -62,10 +268,10 @@ class CPHD_GMS_Filter:
             P_preds_k = np.empty((N+L, self.model.x_dim, self.model.x_dim))
 
             # Predict surviving states
-            w_preds_k[L:] = self.model.P_S * w_upds[-1]
+            w_preds_k[L:] = self.model.P_S * w_upds_k
             m_preds_k[L:], P_preds_k[L:] = \
                 kalman_predict(self.model.F, self.model.Q,
-                               m_upds[-1], P_upds[-1])
+                               m_upds_k, P_upds_k)
 
             # Predict born states
             w_preds_k[:L] = self.model.w_birth
@@ -73,38 +279,15 @@ class CPHD_GMS_Filter:
             P_preds_k[:L] = self.model.P_birth
 
             # Predict cardinality
-            # Surviving
-            surviving_c_preds = np.zeros(self.N_max + 1)
-            for i in range(self.N_max + 1):
-                terms = np.zeros(self.N_max + 1)
-                for j in range(i, self.N_max + 1):
-                    terms[j] = np.exp(
-                        np.sum(np.log(np.arange(i + 1, j + 1)))
-                        - np.sum(np.log(np.arange(1, j - i + 1)))
-                        + j * np.log(self.model.P_S)
-                        + (j - i) * np.log(1. - self.model.P_S)
-                    ) * c_upds[-1][j]
-                surviving_c_preds[i] = terms.sum()
-
-            # Birth
-            c_preds_k = np.zeros(self.N_max + 1)
-            for n in range(self.N_max + 1):
-                terms = np.zeros(self.N_max + 1)
-                for j in range(n + 1):
-                    terms[j] = np.exp(
-                        - self.model.w_birth.sum()
-                        + (n - j) * np.log(self.model.w_birth.sum())
-                        - np.sum(np.log(np.arange(1, n - j + 1)))
-                    ) * surviving_c_preds[j]
-                c_preds_k[n] = terms.sum()
-
-            # Normalize
-            c_preds_k = c_preds_k / c_preds_k.sum()
+            c_preds_k = \
+                predict_cardinality(self.N_max,
+                                    self.model.P_S, self.model.w_birth.sum(),
+                                    c_upds_k)
 
             # == Gating ==
-            cand_Z = Z[k-1]
+            cand_Z = Z[k]
             if self.use_gating:
-                cand_Z = gate(Z[k-1],
+                cand_Z = gate(Z[k],
                               self.gamma, self.model.H, self.model.R,
                               m_preds_k, P_preds_k)
 
@@ -124,77 +307,36 @@ class CPHD_GMS_Filter:
                                            m_preds_k, P_preds_k)
 
             # Compute symmetric functions
-            XI_vals = self.model.P_D * (qs.T @ w_preds_k) / self.model.pdf_c
+            XI_vals = (qs.T @ w_preds_k) * self.model.P_D / self.model.pdf_c
 
             esfvals_E = esf(XI_vals)
             esfvals_D = np.zeros((N2, N2))
-            for i in range(N2):
-                mask = np.ones_like(XI_vals, dtype=np.bool8)
-                mask[i] = False
-                esfvals_D[:, i] = esf(XI_vals[mask])
+            mask = ~np.eye(N2, dtype=np.bool8)
+            # for i in range(N2):
+            #     esfvals_D[:, i] = esf(XI_vals[mask[i]])
+            esfvals_D = esf_batch(
+                XI_vals.reshape(1, -1)
+                .repeat(N2, axis=0)[mask]
+                .reshape(N2, N2 - 1)
+            ).T
 
             # Compute upsilons
-            upsilon0_E = np.zeros(self.N_max + 1)
-            upsilon1_E = np.zeros(self.N_max + 1)
-            upsilon1_D = np.zeros((self.N_max + 1, N2))
-
-            for n in range(self.N_max + 1):
-                terms0_E = np.zeros(min(N2, n) + 1)
-                for j in range(min(N2, n) + 1):
-                    terms0_E[j] = np.exp(
-                        - self.model.lambda_c
-                        + (N2 - j) * np.log(self.model.lambda_c)
-                        + np.sum(np.log(np.arange(1, n + 1)))
-                        - np.sum(np.log(np.arange(1, n - j + 1)))
-                        + (n - j) * np.log(1. - self.model.P_D)
-                        - j * np.log(np.sum(w_preds_k))
-                    ) * esfvals_E[j]
-                upsilon0_E[n] = terms0_E.sum()
-
-                terms1_E = np.zeros(min(N2, n) + 1)
-                for j in range(min(N2, n) + 1):
-                    if n >= j + 1:
-                        terms1_E[j] = np.exp(
-                            - self.model.lambda_c
-                            + (N2 - j) * np.log(self.model.lambda_c)
-                            + np.sum(np.log(np.arange(1, n + 1)))
-                            - np.sum(np.log(np.arange(1, n - (j + 1) + 1)))
-                            + (n - (j + 1)) * np.log(1. - self.model.P_D)
-                            - (j + 1) * np.log(np.sum(w_preds_k))
-                        ) * esfvals_E[j]
-                upsilon1_E[n] = terms1_E.sum()
-
-                if N2 > 0:
-                    terms1_D = np.zeros((min(N2 - 1, n) + 1, N2))
-                    for i in range(N2):
-                        for j in range(min(N2 - 1, n) + 1):
-                            if n >= j + 1:
-                                terms1_D[j, i] = np.exp(
-                                    - self.model.lambda_c
-                                    + ((N2 - 1) - j) *
-                                    np.log(self.model.lambda_c)
-                                    + np.sum(np.log(np.arange(1, n + 1)))
-                                    - np.sum(np.log(np.arange(1, n - (j + 1) + 1)))
-                                    + (n - (j + 1)) *
-                                    np.log(1. - self.model.P_D)
-                                    - (j + 1) * np.log(np.sum(w_preds_k))
-                                ) * esfvals_D[j, i]
-                    upsilon1_D[n, :] = terms1_D.sum(0)
+            upsilon0_E, upsilon1_E, upsilon1_D = \
+                compute_upsilons(self.N_max, N2,
+                                 self.model.lambda_c, self.model.P_D,
+                                 w_preds_k, esfvals_E, esfvals_D)
 
             # Miss detection
-            w_upds_k[:N1] = \
-                (upsilon1_E @ c_preds_k) / (upsilon0_E @ c_preds_k) \
-                * (1 - self.model.P_D) * w_preds_k
+            w_upds_k[:N1] = w_preds_k * (1 - self.model.P_D) * \
+                (upsilon1_E @ c_preds_k) / (upsilon0_E @ c_preds_k)
             m_upds_k[:N1] = m_preds_k.copy()
             P_upds_k[:N1] = P_preds_k.copy()
 
             if N2 > 0:
-                for i in range(N2):
-                    w_upds_k[N1+i*N1:N1+(i+1)*N1] = \
-                        (upsilon1_D[:, i] @ c_preds_k) / \
-                        (upsilon0_E @ c_preds_k) * \
-                        self.model.P_D * w_preds_k * qs[:, i] / \
-                        self.model.pdf_c
+                w = (qs * w_preds_k[:, None]) * self.model.P_D * \
+                    (upsilon1_D.T @ c_preds_k) / (upsilon0_E @ c_preds_k) / \
+                    self.model.pdf_c
+                w_upds_k[N1:] = w.T.reshape(-1)
 
                 m_upds_k[N1:] = \
                     ms.transpose(1, 0, 2).reshape(-1, self.model.x_dim)
@@ -213,18 +355,7 @@ class CPHD_GMS_Filter:
                 w_upds_k, m_upds_k, P_upds_k,
                 self.merge_threshold, self.L_max)
 
-            # Log
-            w_upds.append(w_upds_k)
-            m_upds.append(m_upds_k)
-            P_upds.append(P_upds_k)
-            c_upds.append(c_upds_k)
-
             # == Estimate ==
-            cnt = w_upds_k.round().astype(np.int32)
-            w_ests_k = w_upds_k.repeat(cnt, axis=0)
-            m_ests_k = m_upds_k.repeat(cnt, axis=0)
-            P_ests_k = P_upds_k.repeat(cnt, axis=0)
-
             cnt = np.argmax(c_upds_k)
             indices = w_upds_k.argsort()[::-1][:cnt]
             w_ests_k, m_ests_k, P_ests_k = \

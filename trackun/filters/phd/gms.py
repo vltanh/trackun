@@ -23,15 +23,15 @@ class PHD_GMS_Filter:
     def run(self, Z):
         K = len(Z)
 
-        w_upds = [np.array([1.])]
-        m_upds = [np.zeros((1, self.model.x_dim))]
-        P_upds = [np.eye(self.model.x_dim)[np.newaxis, :]]
+        w_ests, m_ests, P_ests = [], [], []
 
-        w_ests, m_ests, P_ests = [[]], [[]], [[]]
+        w_upds_k = np.array([1.])
+        m_upds_k = np.zeros((1, self.model.x_dim))
+        P_upds_k = np.eye(self.model.x_dim)[np.newaxis, :]
 
         for k in range(1, K + 1):
             # == Predict ==
-            N = w_upds[-1].shape[0]
+            N = w_upds_k.shape[0]
             L = self.model.L_birth
 
             w_preds_k = np.empty((N+L,))
@@ -39,10 +39,10 @@ class PHD_GMS_Filter:
             P_preds_k = np.empty((N+L, self.model.x_dim, self.model.x_dim))
 
             # Predict surviving states
-            w_preds_k[L:] = self.model.P_S * w_upds[-1]
+            w_preds_k[L:] = self.model.P_S * w_upds_k
             m_preds_k[L:], P_preds_k[L:] = \
                 kalman_predict(self.model.F, self.model.Q,
-                               m_upds[-1], P_upds[-1])
+                               m_upds_k, P_upds_k)
 
             # Predict born states
             w_preds_k[:L] = self.model.w_birth
@@ -93,11 +93,6 @@ class PHD_GMS_Filter:
             w_upds_k, m_upds_k, P_upds_k = merge_and_cap(
                 w_upds_k, m_upds_k, P_upds_k,
                 self.merge_threshold, self.L_max)
-
-            # Log
-            w_upds.append(w_upds_k)
-            m_upds.append(m_upds_k)
-            P_upds.append(P_upds_k)
 
             # == Estimate ==
             cnt = w_upds_k.round().astype(np.int32)
