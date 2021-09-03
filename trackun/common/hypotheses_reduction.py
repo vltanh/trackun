@@ -14,41 +14,53 @@ def cap(ws, ms, Ps, L_max):
 
 
 # @numba.jit(nopython=True)
-def close(g1, g2, thres):
-    k = g1[1].shape[0]
-    iS2 = la.inv(g2[2])
-    dx = g1[1] - g2[1]
-    tr = np.trace(iS2 @ g1[2])
-    quad = dx.T @ iS2 @ dx
-    det = np.log(la.det(g2[2]) / la.det(g1[2]))
-    d = .5 * (tr + quad - k + det)
+def close(m1, P1, detP1, iP1, m2, P2, detP2, iP2, thres):
+    # Trace term
+    tr = np.trace(iP2 @ P1)
+
+    # Quadratic term
+    dx = m1 - m2
+    quad = dx.T @ iP2 @ dx
+
+    # Determinant term
+    det = np.log(detP2 / detP1)
+
+    # Distance
+    d = tr + quad + det
     return d < thres
 
 
-def merge_hyp(hyp, idx):
-    ws, xs, Ps = zip(*[hyp[i] for i in idx])
+def merge_components(ws, xs, Ps):
     w_merge = sum(ws)
-    x_merge = sum([w * x / w_merge for x, w in zip(xs, ws)])
-    P_merge = sum([w * P / w_merge for P, w in zip(Ps, ws)]) +\
-        sum([w * (x_merge - x) @ (x_merge - x).T / w_merge for x, w in zip(xs, ws)])
+    x_merge = sum([x * w / w_merge for w, x in zip(ws, xs)])
+    P_merge = sum([(P + (x_merge - x) @ (x_merge - x).T) *
+                  w / w_merge for w, x, P in zip(ws, xs, Ps)])
     return (w_merge, x_merge, P_merge)
 
 
 def merge_and_cap(ws, ms, Ps, thres, L_max):
-    hyp = sorted(zip(ws, ms, Ps),
+    detPs = la.det(Ps).reshape(Ps.shape[0])
+    iPs = la.inv(Ps)
+    hyp = sorted(zip(ws, ms, Ps, detPs, iPs),
                  key=lambda x: x[0], reverse=True)
+    N = len(hyp)
 
     hyp_GSF = []
-    ignore = np.zeros(len(hyp), dtype=np.bool8)
-    for i in range(len(hyp)):
+    ignore = np.zeros(N, dtype=np.bool8)
+    for i in range(N):
         if ignore[i]:
             continue
-        merge_indices = [i]
-        for j in range(i+1, len(hyp)):
-            if not ignore[j] and close(hyp[i], hyp[j], thres):
-                merge_indices.append(j)
 
-        hyp_GSF.append(merge_hyp(hyp, merge_indices))
+        merge_indices = [i]
+        merge_indices.extend(filter(
+            lambda j:
+                not ignore[j] and
+                close(*hyp[i][1:], *hyp[j][1:], thres),
+            range(i+1, N)
+        ))
+
+        ws, ms, Ps = zip(*[hyp[i][:3] for i in merge_indices])
+        hyp_GSF.append(merge_components(ws, ms, Ps))
         ignore[merge_indices] = True
 
         if len(hyp_GSF) >= L_max:
