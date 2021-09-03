@@ -1,3 +1,5 @@
+from trackun.metrics.ospa import ospa
+
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
@@ -74,45 +76,82 @@ def visualize_est(ms, Ps, method, ax, color):
         ax.arrow(*m[[0, 2]], *3*m[[1, 3]], color=color)
 
 
-def graph_truth_count(cnts, ax, color):
-    ax.plot(range(1, len(cnts) + 1), cnts,
-            label=f'True count', color=color)
-
-
-def graph_count(cnts, method, ax, color):
-    ax.scatter(range(1, len(cnts) + 1), cnts,
-               label=f'{method}', color=color)
-
-
 def visualize(w_ests, m_ests, P_ests, methods, model=None, obs=None, truth=None):
+    if truth is not None:
+        ospa_d = dict()
+        for i in range(len(methods)):
+            ospa_d[methods[i]] = {
+                'total': np.zeros(obs.K),
+                'loc': np.zeros(obs.K),
+                'card': np.zeros(obs.K)
+            }
+            for k in range(obs.K):
+                t = ospa(truth.X[k], m_ests[i][k])
+                ospa_d[methods[i]]['total'][k] = t[0]
+                ospa_d[methods[i]]['loc'][k] = t[1]
+                ospa_d[methods[i]]['card'][k] = t[2]
+
     for k in tqdm(range(obs.K)):
-        fig, ax = plt.subplots(1, 2, figsize=(20, 10), dpi=100)
+        fig = plt.figure(figsize=(20, 10), dpi=100)
+        gs = fig.add_gridspec(4, 2)
+
+        ax_vis = fig.add_subplot(gs[:, 0])
+        ax_count = fig.add_subplot(gs[0, 1])
+        ax_ospa = fig.add_subplot(gs[1, 1])
+        ax_ospa_loc = fig.add_subplot(gs[2, 1])
+        ax_ospa_card = fig.add_subplot(gs[3, 1])
 
         if model is not None:
-            visualize_model(model, ax[0])
-            graph_truth_count([len(x) for x in truth.X[:k + 1]], ax[1], 'blue')
+            visualize_model(model, ax_vis)
 
         if truth is not None:
-            visualize_truth(truth, k+1, ax[0])
+            visualize_truth(truth, k+1, ax_vis)
+            ax_count.plot(range(1, k+2), [len(x) for x in truth.X[:k+1]],
+                          label=f'True count', color='blue')
+            for method, color in zip(methods, COLOR):
+                ax_ospa.plot(range(1, k+2),
+                             ospa_d[method]['total'][:k+1],
+                             c=color, label=method)
+                ax_ospa_loc.plot(range(1, k+2),
+                                 ospa_d[method]['loc'][:k+1],
+                                 c=color, label=method)
+                ax_ospa_card.plot(range(1, k+2),
+                                  ospa_d[method]['card'][:k+1],
+                                  c=color, label=method)
 
         if obs is not None:
-            visualize_obs(obs.Z[k], ax[0])
+            visualize_obs(obs.Z[k], ax_vis)
 
         for i in range(len(w_ests)):
             visualize_est(m_ests[i][k], P_ests[i][k],
-                          methods[i], ax[0], color=COLOR[i])
-            graph_count([len(w) for w in w_ests[i][:k+1]],
-                        methods[i], ax[1], COLOR[i])
+                          methods[i], ax_vis, color=COLOR[i])
+            ax_count.scatter(range(1, k+2), [len(w) for w in w_ests[i][:k+1]],
+                             label=methods[i], color=COLOR[i])
 
-        ax[0].set_xlim(-1000, 1000)
-        ax[0].set_ylim(-1000, 1000)
-        ax[0].legend(loc='upper right')
-        ax[0].set_title('Visualization')
+        ax_vis.set_xlim(-1000, 1000)
+        ax_vis.set_ylim(-1000, 1000)
+        ax_vis.legend(loc='upper right')
+        ax_vis.set_title('Visualization')
 
-        ax[1].set_xlim(0, obs.K + 1)
-        ax[1].set_ylim(0, 15)
-        ax[1].legend(loc='upper right')
-        ax[1].set_title('Number of objects')
+        ax_count.set_xlim(0, obs.K + 1)
+        ax_count.set_ylim(0, 15)
+        ax_count.legend(loc='upper left')
+        ax_count.set_title('Number of objects')
+
+        ax_ospa.set_xlim(0, obs.K + 1)
+        ax_ospa.set_ylim(0, 100)
+        ax_ospa.legend(loc='upper right')
+        ax_ospa.set_title('OSPA')
+
+        ax_ospa_loc.set_xlim(0, obs.K + 1)
+        ax_ospa_loc.set_ylim(0, 100)
+        ax_ospa_loc.legend(loc='upper right')
+        ax_ospa_loc.set_title('OSPA loc')
+
+        ax_ospa_card.set_xlim(0, obs.K + 1)
+        ax_ospa_card.set_ylim(0, 100)
+        ax_ospa_card.legend(loc='upper right')
+        ax_ospa_card.set_title('OSPA card')
 
         plt.suptitle(f'Time: {k+1:3d}')
         fig.tight_layout()
