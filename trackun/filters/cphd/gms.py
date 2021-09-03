@@ -1,3 +1,4 @@
+from numpy.lib.function_base import meshgrid
 from trackun.common.kalman import kalman_predict, kalman_update
 from trackun.common.hypotheses_reduction import prune, merge_and_cap
 from trackun.common.gating import gate
@@ -17,7 +18,7 @@ def esf(Z):
         return np.array([1.])
 
     F = np.zeros((2, n_z + 1))
-    F[0, 1] = F[1, 1] + Z[0]
+    F[0, 1] = Z[0]
 
     i_n, i_nminus = 1, 0
     for n in range(2, n_z + 1):
@@ -58,46 +59,66 @@ def predict_cardinality(N_max, P_S, sum_w_birth, c_upds_k):
     aux[1:] = np.cumsum(np.log(np.arange(1, N_max + 1)))
 
     # Surviving
-    surviving_c_preds = np.zeros(N_max + 1)
-    for i in range(N_max + 1):
-        # terms = np.zeros(N_max + 1)
-        # for j in range(i, N_max + 1):
-        #     terms[j] = np.exp(
-        #         np.log(np.arange(1, j + 1)).sum()
-        #         # aux[j]
-        #         - np.log(np.arange(1, i + 1)).sum()
-        #         # - aux[i]
-        #         - np.log(np.arange(1, j - i + 1)).sum()
-        #         # - aux[j-i]
-        #         + j * np.log(P_S)
-        #         + (j - i) * np.log(1. - P_S)
-        #     )
-        terms = np.zeros(N_max + 1)
-        terms[i:] = np.exp(
-            aux[i:] - aux[i] - aux[:N_max - i + 1]
-            + np.arange(i, N_max + 1) * np.log(P_S)
-            + np.arange(0, N_max - i + 1) * np.log1p(-P_S)
-        )
-        surviving_c_preds[i] = (terms * c_upds_k).sum()
+    # surviving_c_preds = np.zeros(N_max + 1)
+    # for i in range(N_max + 1):
+    #     # terms = np.zeros(N_max + 1)
+    #     # for j in range(i, N_max + 1):
+    #     #     terms[j] = np.exp(
+    #     #         np.log(np.arange(1, j + 1)).sum()
+    #     #         # aux[j]
+    #     #         - np.log(np.arange(1, i + 1)).sum()
+    #     #         # - aux[i]
+    #     #         - np.log(np.arange(1, j - i + 1)).sum()
+    #     #         # - aux[j-i]
+    #     #         + j * np.log(P_S)
+    #     #         + (j - i) * np.log(1. - P_S)
+    #     #     )
+    #     terms = np.zeros(N_max + 1)
+    #     terms[i:] = np.exp(
+    #         aux[i:] - aux[i] - aux[:N_max - i + 1]
+    #         + np.arange(i, N_max + 1) * np.log(P_S)
+    #         + np.arange(0, N_max - i + 1) * np.log1p(-P_S)
+    #     )
+    #     surviving_c_preds[i] = (terms * c_upds_k).sum()
+    triu_ones = np.triu(np.ones(N_max + 1))
+    ar = np.arange(0, N_max + 1)
+    select_indices = ar - ar.reshape(-1, 1)
+    terms = np.exp(
+        aux
+        - aux.reshape(-1, 1)
+        - aux.take(select_indices)
+        + ar * np.log(P_S)
+        + select_indices * np.log1p(-P_S)
+    ) * triu_ones * c_upds_k
+    surviving_c_preds = terms.sum(1)
 
     # Birth
-    c_preds_k = np.zeros(N_max + 1)
-    for i in range(N_max + 1):
-        # terms = np.zeros(N_max + 1)
-        # for j in range(i + 1):
-        #     terms[j] = np.exp(
-        #         - sum_w_birth
-        #         + (i - j) * log_sum_w_birth
-        #         - np.sum(np.log(np.arange(1, i - j + 1)))
-        #         # - aux[i - j]
-        #     )
-        terms = np.zeros(N_max + 1)
-        terms[:i+1] = np.exp(
-            - sum_w_birth
-            + np.arange(i, -1, -1) * np.log(sum_w_birth)
-            - aux[:i+1][::-1]
-        )
-        c_preds_k[i] = (terms * surviving_c_preds).sum()
+    # c_preds_k = np.zeros(N_max + 1)
+    # for i in range(N_max + 1):
+    #     # terms = np.zeros(N_max + 1)
+    #     # for j in range(i + 1):
+    #     #     terms[j] = np.exp(
+    #     #         - sum_w_birth
+    #     #         + (i - j) * log_sum_w_birth
+    #     #         - np.sum(np.log(np.arange(1, i - j + 1)))
+    #     #         # - aux[i - j]
+    #     #     )
+    #     terms = np.zeros(N_max + 1)
+    #     terms[:i+1] = np.exp(
+    #         - sum_w_birth
+    #         + np.arange(i, -1, -1) * np.log(sum_w_birth)
+    #         - aux[:i+1][::-1]
+    #     )
+    #     c_preds_k[i] = (terms * surviving_c_preds).sum()
+    # tril_ones = np.tril(np.ones(N_max + 1))
+    # ar = np.arange(0, N_max + 1)
+    # select_indices = ar.reshape(-1, 1) - ar
+    terms = np.exp(
+        - sum_w_birth
+        + select_indices.T * np.log(sum_w_birth)
+        - aux.take(select_indices.T)
+    ) * triu_ones.T * surviving_c_preds
+    c_preds_k = terms.sum(1)
 
     # Normalize
     c_preds_k = c_preds_k / c_preds_k.sum()
@@ -191,8 +212,7 @@ def compute_upsilon0_E_elem(N2, n,
     #         + (n - j) * np.log(1. - P_D)
     #         - j * log_sum_w_preds_k
     #     )
-    terms0_E = np.zeros(N + 1)
-    terms0_E[:N + 1] = np.exp(
+    terms0_E = np.exp(
         - lambda_c
         + np.arange(N2, N2 - N - 1, -1) * np.log(lambda_c)
         + aux[n]
@@ -215,20 +235,20 @@ def compute_upsilons(N_max, N2, lambda_c, P_D, w_preds_k, esfvals_E, esfvals_D):
     aux[1:] = np.cumsum(np.log(np.arange(1, max(N_max, N2) + 1)))
 
     for n in range(N_max + 1):
-        upsilon0_E[n] = \
-            compute_upsilon0_E_elem(N2, n,
-                                    lambda_c, P_D,
-                                    log_sum_w_preds_k, esfvals_E, aux)
+        upsilon0_E[n] = compute_upsilon0_E_elem(N2, n,
+                                                lambda_c, P_D,
+                                                log_sum_w_preds_k, esfvals_E, aux)
 
-        upsilon1_E[n] = \
-            compute_upsilon1_E_elem(N2, n,
-                                    lambda_c, P_D,
-                                    log_sum_w_preds_k, esfvals_E, aux)
-        if N2 > 0:
-            upsilon1_D[n, :] = \
-                compute_upsilon1_D_row(N2, n,
-                                       lambda_c, P_D,
-                                       log_sum_w_preds_k, esfvals_D, aux)
+    for n in range(N_max + 1):
+        upsilon1_E[n] = compute_upsilon1_E_elem(N2, n,
+                                                lambda_c, P_D,
+                                                log_sum_w_preds_k, esfvals_E, aux)
+
+    if N2 > 0:
+        for n in range(N_max + 1):
+            upsilon1_D[n, :] = compute_upsilon1_D_row(N2, n,
+                                                      lambda_c, P_D,
+                                                      log_sum_w_preds_k, esfvals_D, aux)
 
     return upsilon0_E, upsilon1_E, upsilon1_D
 
@@ -239,7 +259,7 @@ class CPHD_GMS_Filter:
 
         self.L_max = 100
         self.elim_threshold = 1e-5
-        self.merge_threshold = 4
+        self.merge_threshold = 12
 
         self.N_max = 20
 
@@ -269,9 +289,8 @@ class CPHD_GMS_Filter:
 
             # Predict surviving states
             w_preds_k[L:] = self.model.P_S * w_upds_k
-            m_preds_k[L:], P_preds_k[L:] = \
-                kalman_predict(self.model.F, self.model.Q,
-                               m_upds_k, P_upds_k)
+            m_preds_k[L:], P_preds_k[L:] = kalman_predict(self.model.F, self.model.Q,
+                                                          m_upds_k, P_upds_k)
 
             # Predict born states
             w_preds_k[:L] = self.model.w_birth
@@ -279,10 +298,9 @@ class CPHD_GMS_Filter:
             P_preds_k[:L] = self.model.P_birth
 
             # Predict cardinality
-            c_preds_k = \
-                predict_cardinality(self.N_max,
-                                    self.model.P_S, self.model.w_birth.sum(),
-                                    c_upds_k)
+            c_preds_k = predict_cardinality(self.N_max,
+                                            self.model.P_S, self.model.w_birth.sum(),
+                                            c_upds_k)
 
             # == Gating ==
             cand_Z = Z[k]
@@ -321,10 +339,9 @@ class CPHD_GMS_Filter:
             ).T
 
             # Compute upsilons
-            upsilon0_E, upsilon1_E, upsilon1_D = \
-                compute_upsilons(self.N_max, N2,
-                                 self.model.lambda_c, self.model.P_D,
-                                 w_preds_k, esfvals_E, esfvals_D)
+            upsilon0_E, upsilon1_E, upsilon1_D = compute_upsilons(self.N_max, N2,
+                                                                  self.model.lambda_c, self.model.P_D,
+                                                                  w_preds_k, esfvals_E, esfvals_D)
 
             # Miss detection
             w_upds_k[:N1] = w_preds_k * (1 - self.model.P_D) * \
@@ -333,13 +350,12 @@ class CPHD_GMS_Filter:
             P_upds_k[:N1] = P_preds_k.copy()
 
             if N2 > 0:
-                w = (qs * w_preds_k[:, None]) * self.model.P_D * \
+                w = (qs * w_preds_k[:, np.newaxis]) * self.model.P_D * \
                     (upsilon1_D.T @ c_preds_k) / (upsilon0_E @ c_preds_k) / \
                     self.model.pdf_c
                 w_upds_k[N1:] = w.T.reshape(-1)
 
-                m_upds_k[N1:] = \
-                    ms.transpose(1, 0, 2).reshape(-1, self.model.x_dim)
+                m_upds_k[N1:] = ms.transpose(1, 0, 2).reshape(N1 * N2, -1)
                 P_upds_k[N1:] = np.tile(Ps, (N2, 1, 1))
 
             # Update cardinality
@@ -358,8 +374,7 @@ class CPHD_GMS_Filter:
             # == Estimate ==
             cnt = np.argmax(c_upds_k)
             indices = w_upds_k.argsort()[::-1][:cnt]
-            w_ests_k, m_ests_k, P_ests_k = \
-                w_upds_k[indices], m_upds_k[indices], P_upds_k[indices]
+            w_ests_k, m_ests_k, P_ests_k = w_upds_k[indices], m_upds_k[indices], P_upds_k[indices]
 
             w_ests.append(w_ests_k)
             m_ests.append(m_ests_k)
