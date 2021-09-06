@@ -4,6 +4,8 @@ from scipy.optimize import linear_sum_assignment
 
 def ospa(X, Y, c=100., p=1.):
     nx, ny = X.shape[0], Y.shape[0]
+    if nx == 0 and ny == 0:
+        return 0., 0., 0.
 
     D = distance_matrix(X, Y)
     D = D.clip(max=c) ** p
