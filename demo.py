@@ -7,10 +7,17 @@ from time import time
 import numpy as np
 np.random.seed(3698)
 
+card_mode = 'multi'
+model_mode = 'linear_gaussian'
 filters_name = ['GM-CPHD', 'GM-PHD']
 
 print('Begin generating examples...')
-model = LinearGaussianWithBirthModel()
+if card_mode == 'multi':
+    if model_mode == 'linear_gaussian':
+        model = LinearGaussianWithBirthModel()
+elif card_mode == 'single':
+    if model_mode == 'linear_gaussian':
+        model = SingleObjectLinearGaussianWithBirthModel()
 truth = model.gen_truth()
 obs = model.gen_obs(truth)
 print('Generation done!')

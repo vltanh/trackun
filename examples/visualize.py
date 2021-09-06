@@ -53,16 +53,28 @@ def visualize_truth(truth, k, ax):
 
 
 def visualize_model(model, ax):
-    for m, P in zip(model.m_birth, model.P_birth):
-        draw_ellipse(m[[0, 2]], P[[0, 2]][:, [0, 2]], ax,
-                     color='orange', fill=None, linestyle='dashed')
+    if isinstance(model.m_birth, list):
+        for m_births, P_births in zip(model.m_birth, model.P_birth):
+            for m, P in zip(m_births, P_births):
+                draw_ellipse(m[[0, 2]], P[[0, 2]][:, [0, 2]], ax,
+                             color='orange', fill=None, linestyle='dashed')
+    else:
+        for m, P in zip(model.m_birth, model.P_birth):
+            draw_ellipse(m[[0, 2]], P[[0, 2]][:, [0, 2]], ax,
+                         color='orange', fill=None, linestyle='dashed')
 
 
-def visualize_obs(obs, ax):
+def visualize_obs(obs, ax, is_clutter=None):
     ax.scatter(obs[:, 0],
                obs[:, 1],
                c='black', alpha=0.3,
                label='Detection')
+
+    if is_clutter is not None:
+        ax.scatter(obs[is_clutter, 0],
+                   obs[is_clutter, 1],
+                   c='red', alpha=0.3,
+                   label='Clutter')
 
 
 def visualize_est(ms, Ps, method, ax, color):
@@ -79,17 +91,17 @@ def visualize_est(ms, Ps, method, ax, color):
 def visualize(w_ests, m_ests, P_ests, methods, model=None, obs=None, truth=None):
     if truth is not None:
         ospa_d = dict()
-        for i in range(len(methods)):
-            ospa_d[methods[i]] = {
+        for i, method in enumerate(methods):
+            ospa_d[method] = {
                 'total': np.zeros(obs.K),
                 'loc': np.zeros(obs.K),
                 'card': np.zeros(obs.K)
             }
             for k in range(obs.K):
                 t = ospa(truth.X[k], m_ests[i][k])
-                ospa_d[methods[i]]['total'][k] = t[0]
-                ospa_d[methods[i]]['loc'][k] = t[1]
-                ospa_d[methods[i]]['card'][k] = t[2]
+                ospa_d[method]['total'][k] = t[0]
+                ospa_d[method]['loc'][k] = t[1]
+                ospa_d[method]['card'][k] = t[2]
 
     for k in tqdm(range(obs.K)):
         fig = plt.figure(figsize=(20, 10), dpi=100)
@@ -122,10 +134,10 @@ def visualize(w_ests, m_ests, P_ests, methods, model=None, obs=None, truth=None)
         if obs is not None:
             visualize_obs(obs.Z[k], ax_vis)
 
-        for i in range(len(w_ests)):
+        for i in range(len(methods)):
             visualize_est(m_ests[i][k], P_ests[i][k],
                           methods[i], ax_vis, color=COLOR[i])
-            ax_count.scatter(range(1, k+2), [len(w) for w in w_ests[i][:k+1]],
+            ax_count.scatter(range(1, k+2), [len(m) for m in m_ests[i][:k+1]],
                              label=methods[i], color=COLOR[i])
 
         ax_vis.set_xlim(-1000, 1000)
@@ -152,6 +164,29 @@ def visualize(w_ests, m_ests, P_ests, methods, model=None, obs=None, truth=None)
         ax_ospa_card.set_ylim(0, 100)
         ax_ospa_card.legend(loc='upper right')
         ax_ospa_card.set_title('OSPA card')
+
+        plt.suptitle(f'Time: {k+1:3d}')
+        fig.tight_layout()
+        plt.savefig(f'output/{k+1:03d}')
+        # plt.show()
+        plt.close(fig)
+
+
+def visualize_input(obs, truth):
+    for k in tqdm(range(obs.K)):
+        fig = plt.figure(figsize=(10, 10), dpi=100)
+        gs = fig.add_gridspec(1, 1)
+        ax_vis = fig.add_subplot(gs[0])
+
+        if truth is not None:
+            visualize_truth(truth, k+1, ax_vis)
+
+        if obs is not None:
+            visualize_obs(obs.Z[k], ax_vis, obs.is_clutter[k])
+
+        ax_vis.set_xlim(-1000, 1000)
+        ax_vis.set_ylim(-1000, 1000)
+        ax_vis.legend(loc='upper right')
 
         plt.suptitle(f'Time: {k+1:3d}')
         fig.tight_layout()
