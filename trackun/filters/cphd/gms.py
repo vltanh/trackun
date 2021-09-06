@@ -259,11 +259,11 @@ class CPHD_GMS_Filter:
 
         self.L_max = 100
         self.elim_threshold = 1e-5
-        self.merge_threshold = 12
+        self.merge_threshold = 4
 
         self.N_max = 20
 
-        self.P_G = 0.99
+        self.P_G = 0.999
         self.gamma = chi2.ppf(self.P_G, self.model.z_dim)
         self.use_gating = use_gating
 
