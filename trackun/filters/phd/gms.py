@@ -29,7 +29,7 @@ class PHD_GMS_Filter:
         m_upds_k = np.zeros((1, self.model.x_dim))
         P_upds_k = np.eye(self.model.x_dim)[np.newaxis, :]
 
-        for k in range(1, K + 1):
+        for k in range(K):
             # == Predict ==
             N = w_upds_k.shape[0]
             L = self.model.L_birth
@@ -50,9 +50,9 @@ class PHD_GMS_Filter:
             P_preds_k[:L] = self.model.P_birth
 
             # == Gating ==
-            cand_Z = Z[k-1]
+            cand_Z = Z[k]
             if self.use_gating:
-                cand_Z = gate(Z[k-1],
+                cand_Z = gate(Z[k],
                               self.gamma, self.model.H, self.model.R,
                               m_preds_k, P_preds_k)
 
