@@ -1,4 +1,4 @@
-from trackun.metrics.ospa import ospa
+from trackun.metrics import OSPA
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -90,6 +90,7 @@ def visualize_est(ms, Ps, method, ax, color):
 
 def visualize(w_ests, m_ests, P_ests, methods, model=None, obs=None, truth=None):
     if truth is not None:
+        ospa = OSPA()
         ospa_d = dict()
         for i, method in enumerate(methods):
             ospa_d[method] = {
