@@ -1,5 +1,5 @@
-from examples.models import *
 from trackun.filters import *
+from trackun.models import *
 
 from time import time
 
@@ -7,30 +7,52 @@ from tqdm import tqdm
 import numpy as np
 np.random.seed(3698)
 
-card_mode = ['single', 'multi'][0]
-model_mode = ['linear_gaussian'][0]
-filter_name = ['GM-Bernoulli', 'GM-PHD', 'GM-CPHD'][0]
+card_mode = ['single', 'multi'][1]
+model_mode = ['linear_gaussian', 'ct_gaussian'][0]
+filter_name = ['GM-Bernoulli', 'GM-PHD', 'GM-CPHD', 'SMC-PHD'][2]
 nruns = 100
 
-if card_mode == 'multi':
-    if model_mode == 'linear_gaussian':
-        model = LinearGaussianWithBirthModel()
-elif card_mode == 'single':
-    if model_mode == 'linear_gaussian':
-        model = SingleObjectLinearGaussianWithBirthModel()
+
+def gen_model(card_mode, model_mode):
+    if card_mode == 'multi':
+        if model_mode == 'linear_gaussian':
+            model = LinearGaussianWithBirthModel()
+        elif model_mode == 'ct_gaussian':
+            model = CTGaussianWithBirthModel()
+        else:
+            raise Exception('Unknown model mode.')
+    elif card_mode == 'single':
+        if model_mode == 'linear_gaussian':
+            model = SingleObjectLinearGaussianWithBirthModel()
+        else:
+            raise Exception('Unknown model mode.')
+    else:
+        raise Exception('Unknown cardinality mode.')
+    return model
+
+
+def gen_filter(name, model):
+    if name == 'GM-CPHD':
+        filt = CPHD_GMS_Filter(model)
+    elif name == 'GM-PHD':
+        filt = PHD_GMS_Filter(model)
+    elif name == 'GM-Bernoulli':
+        filt = Bernoulli_GMS_Filter(model)
+    elif name == 'SMC-PHD':
+        filt = PHD_SMC_Filter(model)
+    else:
+        raise Exception('Unknown filter name.')
+    return filt
+
+
+model = gen_model(card_mode, model_mode)
 scenarios = []
 for _ in range(nruns):
     truth = model.gen_truth()
     obs = model.gen_obs(truth)
     scenarios.append(obs)
 
-if filter_name == 'GM-Bernoulli':
-    filt = Bernoulli_GMS_Filter(model)
-elif filter_name == 'GM-PHD':
-    filt = PHD_GMS_Filter(model)
-elif filter_name == 'GM-CPHD':
-    filt = CPHD_GMS_Filter(model)
-
+filt = gen_filter(filter_name, model)
 meter = []
 bar = tqdm(scenarios)
 for obs in bar:
