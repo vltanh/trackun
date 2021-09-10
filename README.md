@@ -2,9 +2,9 @@
 
 A Python package for (multiple) object tracking
 
-# Checklist
+## Checklist
 
-## Filters
+### Filters
 
 <details>
   <summary>Click to expand!</summary>
@@ -63,35 +63,40 @@ A Python package for (multiple) object tracking
   
 </details>
 
-## Models
+### Models
 
-### Motion model
+#### Motion model
 
-- [x] Linear
-- [ ] Coordinated turn (CT)
+- [ ] Linear
+  - [ ] Constant velocity
+- [ ] Non-Linear
+  - [ ] Coordinated turn (CT)
+- [ ] General (?)
 
-### Observation model
+#### Observation model
 
-- [x] Linear
-- [ ] Bearing
+- [ ] Linear
+- [ ] Non-Linear/Gen
+  - [ ] Bearing
+- [ ] General (?)
 
-## Metrics
+### Metrics
 
 - [x] OSPA
 - [ ] OSPA2
 
-## Utility
+### Utility
 
 - [ ] Examples and Visualization
 - [ ] Benchmarking
-- [ ] Optimization
+- [ ] Optimization (consider memory-speed tradeoffs, JIT,...)
 - [ ] System design and folder structure
 - [ ] Testing
 
-# Demo
+## Demo
 
 ![Examples of PHD and CPHD filter](visualize/gms_cphd_phd.gif)
 
-# Credits
+## Credits
 
 Original MATLAB implementation comes from http://ba-tuong.vo-au.com/codes.html
