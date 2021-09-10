@@ -86,6 +86,7 @@ A Python package for (multiple) object tracking
 - [ ] Benchmarking
 - [ ] Optimization
 - [ ] System design and folder structure
+- [ ] Testing
 
 # Demo
 
