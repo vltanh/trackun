@@ -1,13 +1,22 @@
+from dataclasses import dataclass
+
 from trackun.common.kalman import kalman_predict, kalman_update
 from trackun.common.hypotheses_reduction import prune, merge_and_cap
 from trackun.common.gating import gate
 
 import numpy as np
 from scipy.stats.distributions import chi2
-
 import numba
 
 __all__ = ['CPHD_GMS_Filter']
+
+
+@dataclass
+class KF_CPHD_Data:
+    w: np.ndarray
+    m: np.ndarray
+    P: np.ndarray
+    c: np.ndarray
 
 
 # @numba.jit(nopython=True)
@@ -272,130 +281,161 @@ class CPHD_GMS_Filter:
         self.use_gating = use_gating
         self.gamma = chi2.ppf(pG, self.model.z_dim)
 
-    def run(self, Z):
-        K = len(Z)
-
+    def init(self):
         w_upds_k = np.array([1.])
         m_upds_k = np.zeros((1, self.model.x_dim))
         P_upds_k = np.eye(self.model.x_dim)[np.newaxis, :]
+
         c_upds_k = np.zeros(1 + self.N_max)
         c_upds_k[0] = 1.
 
-        w_ests, m_ests, P_ests = [], [], []
+        return KF_CPHD_Data(w_upds_k, m_upds_k, P_upds_k, c_upds_k)
 
-        for k in range(K):
-            # == Predict ==
-            N = w_upds_k.shape[0]
-            L = self.model.birth_model.N
+    def predict(self, upds_k):
+        N = upds_k.w.shape[0]
+        L = self.model.birth_model.N
 
-            w_preds_k = np.empty((N+L,))
-            m_preds_k = np.empty((N+L, self.model.x_dim))
-            P_preds_k = np.empty((N+L, self.model.x_dim, self.model.x_dim))
+        w_preds_k = np.empty((N+L,))
+        m_preds_k = np.empty((N+L, self.model.x_dim))
+        P_preds_k = np.empty((N+L, self.model.x_dim, self.model.x_dim))
 
-            # Predict surviving states
-            w_preds_k[L:] = \
-                self.model.survival_model.get_probability() * w_upds_k
-            m_preds_k[L:], P_preds_k[L:] = kalman_predict(self.model.motion_model.F,
-                                                          self.model.motion_model.Q,
-                                                          m_upds_k, P_upds_k)
+        # Predict surviving states
+        w_preds_k[L:] = \
+            self.model.survival_model.get_probability() * upds_k.w
+        m_preds_k[L:], P_preds_k[L:] = kalman_predict(self.model.motion_model.F,
+                                                      self.model.motion_model.Q,
+                                                      upds_k.m, upds_k.P)
 
-            # Predict born states
-            w_preds_k[:L] = self.model.birth_model.ws
-            m_preds_k[:L] = self.model.birth_model.ms
-            P_preds_k[:L] = self.model.birth_model.Ps
+        # Predict born states
+        w_preds_k[:L] = self.model.birth_model.ws
+        m_preds_k[:L] = self.model.birth_model.ms
+        P_preds_k[:L] = self.model.birth_model.Ps
 
-            # Predict cardinality
-            c_preds_k = \
-                predict_cardinality(
-                    self.N_max,
-                    self.model.survival_model.get_probability(),
-                    self.model.birth_model.ws.sum(),
-                    c_upds_k)
+        # Predict cardinality
+        c_preds_k = \
+            predict_cardinality(
+                self.N_max,
+                self.model.survival_model.get_probability(),
+                self.model.birth_model.ws.sum(),
+                upds_k.c)
 
-            # == Gating ==
-            cand_Z = Z[k]
-            if self.use_gating:
-                cand_Z = gate(Z[k],
-                              self.gamma,
-                              self.model.measurement_model.H,
-                              self.model.measurement_model.R,
-                              m_preds_k, P_preds_k)
+        return KF_CPHD_Data(w_preds_k, m_preds_k, P_preds_k, c_preds_k)
 
-            # == Update ==
-            N1 = w_preds_k.shape[0]
-            N2 = cand_Z.shape[0]
-            M = N1 * (N2 + 1)
+    def gating(self, Z, preds_k):
+        return gate(Z,
+                    self.gamma,
+                    self.model.measurement_model.H,
+                    self.model.measurement_model.R,
+                    preds_k.m, preds_k.P)
 
-            m_upds_k = np.empty((M, self.model.x_dim))
-            P_upds_k = np.empty((M, self.model.x_dim, self.model.x_dim))
-            w_upds_k = np.empty((M,))
+    def postprocess(self, w_upds_k, m_upds_k, P_upds_k):
+        w_upds_k, m_upds_k, P_upds_k = prune(
+            w_upds_k, m_upds_k, P_upds_k,
+            self.elim_threshold)
 
-            # Compute Kalman update
-            if N2 > 0:
-                qs, ms, Ps = kalman_update(cand_Z,
-                                           self.model.measurement_model.H,
-                                           self.model.measurement_model.R,
-                                           m_preds_k, P_preds_k)
+        w_upds_k, m_upds_k, P_upds_k = merge_and_cap(
+            w_upds_k, m_upds_k, P_upds_k,
+            self.merge_threshold, self.L_max)
 
-            # Compute symmetric functions
-            XI_vals = (qs.T @ w_preds_k) * \
-                self.model.detection_model.get_probability() / self.model.clutter_model.pdf_c
+        return w_upds_k, m_upds_k, P_upds_k
 
-            esfvals_E = esf(XI_vals)
-            esfvals_D = np.zeros((N2, N2))
-            mask = ~np.eye(N2, dtype=np.bool8)
-            # for i in range(N2):
-            #     esfvals_D[:, i] = esf(XI_vals[mask[i]])
-            esfvals_D = esf_batch(
-                XI_vals.reshape(1, -1)
-                .repeat(N2, axis=0)[mask]
-                .reshape(N2, N2 - 1)
-            ).T
+    def update(self, Z, preds_k):
+        # == Gating ==
+        cand_Z = self.gating(Z, preds_k)
 
-            # Compute upsilons
-            upsilon0_E, upsilon1_E, upsilon1_D = \
-                compute_upsilons(self.N_max, N2,
-                                 self.model.clutter_model.lambda_c,
-                                 self.model.detection_model.get_probability(),
-                                 w_preds_k, esfvals_E, esfvals_D)
+        # == Update ==
+        N1 = preds_k.w.shape[0]
+        N2 = cand_Z.shape[0]
+        M = N1 * (N2 + 1)
 
-            # Miss detection
-            w_upds_k[:N1] = w_preds_k \
-                * (1 - self.model.detection_model.get_probability()) \
-                * (upsilon1_E @ c_preds_k) / (upsilon0_E @ c_preds_k)
-            m_upds_k[:N1] = m_preds_k.copy()
-            P_upds_k[:N1] = P_preds_k.copy()
+        m_upds_k = np.empty((M, self.model.x_dim))
+        P_upds_k = np.empty((M, self.model.x_dim, self.model.x_dim))
+        w_upds_k = np.empty((M,))
 
-            if N2 > 0:
-                w = (qs * w_preds_k[:, np.newaxis]) \
-                    * self.model.detection_model.get_probability() \
-                    * (upsilon1_D.T @ c_preds_k) / (upsilon0_E @ c_preds_k) / \
-                    self.model.clutter_model.pdf_c
-                w_upds_k[N1:] = w.T.reshape(-1)
+        # Compute Kalman update
+        if N2 > 0:
+            qs, ms, Ps = kalman_update(cand_Z,
+                                       self.model.measurement_model.H,
+                                       self.model.measurement_model.R,
+                                       preds_k.m, preds_k.P)
 
-                m_upds_k[N1:] = ms.transpose(1, 0, 2).reshape(N1 * N2, -1)
-                P_upds_k[N1:] = np.tile(Ps, (N2, 1, 1))
+        # Compute symmetric functions
+        XI_vals = (qs.T @ preds_k.w) * \
+            self.model.detection_model.get_probability() / self.model.clutter_model.pdf_c
 
-            # Update cardinality
-            c_upds_k = upsilon0_E * c_preds_k
-            c_upds_k = c_upds_k / c_upds_k.sum()
+        esfvals_E = esf(XI_vals)
+        esfvals_D = np.zeros((N2, N2))
+        mask = ~np.eye(N2, dtype=np.bool8)
+        # for i in range(N2):
+        #     esfvals_D[:, i] = esf(XI_vals[mask[i]])
+        esfvals_D = esf_batch(
+            XI_vals.reshape(1, -1)
+            .repeat(N2, axis=0)[mask]
+            .reshape(N2, N2 - 1)
+        ).T
 
-            # == Post-processing ==
-            w_upds_k, m_upds_k, P_upds_k = prune(
-                w_upds_k, m_upds_k, P_upds_k,
-                self.elim_threshold)
+        # Compute upsilons
+        upsilon0_E, upsilon1_E, upsilon1_D = \
+            compute_upsilons(self.N_max, N2,
+                             self.model.clutter_model.lambda_c,
+                             self.model.detection_model.get_probability(),
+                             preds_k.w, esfvals_E, esfvals_D)
 
-            w_upds_k, m_upds_k, P_upds_k = merge_and_cap(
-                w_upds_k, m_upds_k, P_upds_k,
-                self.merge_threshold, self.L_max)
+        # Miss detection
+        w_upds_k[:N1] = preds_k.w \
+            * (1 - self.model.detection_model.get_probability()) \
+            * (upsilon1_E @ preds_k.c) / (upsilon0_E @ preds_k.c)
+        m_upds_k[:N1] = preds_k.m.copy()
+        P_upds_k[:N1] = preds_k.P.copy()
 
-            # == Estimate ==
-            cnt = np.argmax(c_upds_k)
-            indices = w_upds_k.argsort()[::-1][:cnt]
-            w_ests_k, m_ests_k, P_ests_k = w_upds_k[indices], m_upds_k[indices], P_upds_k[indices]
+        if N2 > 0:
+            w = (qs * preds_k.w[:, np.newaxis]) \
+                * self.model.detection_model.get_probability() \
+                * (upsilon1_D.T @ preds_k.c) / (upsilon0_E @ preds_k.c) / \
+                self.model.clutter_model.pdf_c
+            w_upds_k[N1:] = w.T.reshape(-1)
 
-            w_ests.append(w_ests_k)
-            m_ests.append(m_ests_k)
-            P_ests.append(P_ests_k)
+            m_upds_k[N1:] = ms.transpose(1, 0, 2).reshape(N1 * N2, -1)
+            P_upds_k[N1:] = np.tile(Ps, (N2, 1, 1))
 
-        return w_ests, m_ests, P_ests
+        # Update cardinality
+        c_upds_k = upsilon0_E * preds_k.c
+        c_upds_k = c_upds_k / c_upds_k.sum()
+
+        # == Post-processing ==
+        w_upds_k, m_upds_k, P_upds_k = \
+            self.postprocess(w_upds_k, m_upds_k, P_upds_k)
+
+        return KF_CPHD_Data(w_upds_k, m_upds_k, P_upds_k, c_upds_k)
+
+    def estimate(self, upds_k):
+        cnt = np.argmax(upds_k.c)
+        indices = upds_k.w.argsort()[::-1][:cnt]
+        w_ests_k = upds_k.w[indices]
+        m_ests_k = upds_k.m[indices]
+        P_ests_k = upds_k.P[indices]
+        return KF_CPHD_Data(w_ests_k, m_ests_k, P_ests_k, upds_k.c)
+
+    def step(self, Z, upds_k):
+        # == Predict ==
+        preds_k = self.predict(upds_k)
+
+        # == Update ==
+        upds_k = self.update(Z, preds_k)
+
+        return upds_k
+
+    def run(self, Zs):
+        # Initialize
+        upds_k = self.init()
+
+        # Recursive loop
+        ests = []
+        for Z in Zs:
+            upds_k = self.step(Z, upds_k)
+            ests_k = self.estimate(upds_k)
+            ests.append(ests_k)
+
+        return [est.w for est in ests],\
+            [est.m for est in ests],\
+            [est.P for est in ests]
