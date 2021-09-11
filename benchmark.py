@@ -1,58 +1,46 @@
-from trackun.filters import *
-from trackun.models import *
+from examples.utils import gen_model, gen_filter
 
 from time import time
+import argparse
 
 from tqdm import tqdm
 import numpy as np
 np.random.seed(3698)
 
-card_mode = ['single', 'multi'][1]
-model_mode = ['linear_gaussian', 'ct_gaussian'][0]
-filter_name = ['GM-Bernoulli', 'GM-PHD', 'GM-CPHD', 'SMC-PHD'][2]
-nruns = 100
+parser = argparse.ArgumentParser(description='Benchmark')
+parser.add_argument('-s', '--single',
+                    action='store_true',
+                    help='toggle single object mode')
+parser.add_argument('-m', '--model',
+                    choices=['linear_gaussian', 'ct_gaussian'],
+                    required=True,
+                    help='motion/measurement model to be used')
+parser.add_argument('-f', '--filter',
+                    choices=['GM-Bernoulli', 'GM-PHD', 'GM-CPHD', 'SMC-PHD'],
+                    required=True,
+                    help='filter to be used')
+parser.add_argument('-n', '--nruns',
+                    type=int, default=100,
+                    help='number of runs (default: 100)')
+args = parser.parse_args()
 
+track_single = args.single
+model_id = args.model
+filter_id = args.filter
+nruns = args.nruns
 
-def gen_model(card_mode, model_mode):
-    if card_mode == 'multi':
-        if model_mode == 'linear_gaussian':
-            model = LinearGaussianWithBirthModel()
-        elif model_mode == 'ct_gaussian':
-            model = CTGaussianWithBirthModel()
-        else:
-            raise Exception('Unknown model mode.')
-    elif card_mode == 'single':
-        if model_mode == 'linear_gaussian':
-            model = SingleObjectLinearGaussianWithBirthModel()
-        else:
-            raise Exception('Unknown model mode.')
-    else:
-        raise Exception('Unknown cardinality mode.')
-    return model
-
-
-def gen_filter(name, model):
-    if name == 'GM-CPHD':
-        filt = CPHD_GMS_Filter(model)
-    elif name == 'GM-PHD':
-        filt = PHD_GMS_Filter(model)
-    elif name == 'GM-Bernoulli':
-        filt = Bernoulli_GMS_Filter(model)
-    elif name == 'SMC-PHD':
-        filt = PHD_SMC_Filter(model)
-    else:
-        raise Exception('Unknown filter name.')
-    return filt
-
-
-model = gen_model(card_mode, model_mode)
+print('Begin generating examples...')
+model = gen_model(track_single, model_id)
 scenarios = []
 for _ in range(nruns):
     truth = model.gen_truth()
     obs = model.gen_obs(truth)
     scenarios.append(obs)
+print('Generation done!')
+print('================')
 
-filt = gen_filter(filter_name, model)
+print('Benchmarking...')
+filt = gen_filter(filter_id, model)
 meter = []
 bar = tqdm(scenarios)
 for obs in bar:
@@ -68,7 +56,9 @@ for obs in bar:
         f'Avg time: {np.mean(meter):.4f} ' +
         f'(+/- {np.std(meter):.4f})'
     )
-
+print('Benchmarking done!')
 print('=================')
-print('Average time:', np.mean(meter))
-print('Std time:', np.std(meter))
+
+print('Result:')
+print('\tAverage time:', np.mean(meter))
+print('\tStd time:', np.std(meter))

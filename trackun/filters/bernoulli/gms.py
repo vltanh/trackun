@@ -33,26 +33,28 @@ class Bernoulli_GMS_Filter:
         for k in range(1, K + 1):
             # == Predict ==
             N = w_upds_k.shape[0]
-            L = self.model.L_birth[0]
+            L = self.model.birth_model.Ls[0]
 
             w_preds_k = np.empty((N+L,))
             m_preds_k = np.empty((N+L, self.model.x_dim))
             P_preds_k = np.empty((N+L, self.model.x_dim, self.model.x_dim))
 
-            r_preds_k = self.model.r_birth * (1 - r_upds_k) \
-                + self.model.P_S * r_upds_k
+            r_preds_k = (1 - r_upds_k) * self.model.birth_model.rs \
+                + r_upds_k * self.model.survival_model.get_probability()
 
             # Predict surviving states
-            w_preds_k[L:] = self.model.P_S * r_upds_k * w_upds_k
+            w_preds_k[L:] = w_upds_k * r_upds_k \
+                * self.model.survival_model.get_probability()
             m_preds_k[L:], P_preds_k[L:] = \
-                kalman_predict(self.model.F, self.model.Q,
+                kalman_predict(self.model.motion_model.F,
+                               self.model.motion_model.Q,
                                m_upds_k, P_upds_k)
 
             # Predict born states
-            w_preds_k[:L] = self.model.w_birth[0] \
-                * self.model.r_birth * (1 - r_upds_k)
-            m_preds_k[:L] = self.model.m_birth[0]
-            P_preds_k[:L] = self.model.P_birth[0]
+            w_preds_k[:L] = self.model.birth_model.wss[0] \
+                * self.model.birth_model.rs * (1 - r_upds_k)
+            m_preds_k[:L] = self.model.birth_model.mss[0]
+            P_preds_k[:L] = self.model.birth_model.Pss[0]
 
             # Normalize prediction
             w_preds_k = w_preds_k / w_preds_k.sum()
@@ -61,7 +63,9 @@ class Bernoulli_GMS_Filter:
             cand_Z = Z[k-1]
             if self.use_gating:
                 cand_Z = gate(Z[k-1],
-                              self.gamma, self.model.H, self.model.R,
+                              self.gamma,
+                              self.model.measurement_model.H,
+                              self.model.measurement_model.R,
                               m_preds_k, P_preds_k)
 
             # == Update ==
@@ -74,24 +78,28 @@ class Bernoulli_GMS_Filter:
             P_upds_k = np.empty((M, self.model.x_dim, self.model.x_dim))
 
             # Miss detection
-            w_upds_k[:N1] = (1 - self.model.P_D) * w_preds_k \
-                * self.model.lambda_c * self.model.pdf_c
+            w_upds_k[:N1] = w_preds_k \
+                * (1 - self.model.detection_model.get_probability()) \
+                * self.model.clutter_model.lambda_c * self.model.clutter_model.pdf_c
             m_upds_k[:N1] = m_preds_k.copy()
             P_upds_k[:N1] = P_preds_k.copy()
 
             # Detection
             if N2 > 0:
                 qs, ms, Ps = kalman_update(cand_Z,
-                                           self.model.H, self.model.R,
+                                           self.model.measurement_model.H,
+                                           self.model.measurement_model.R,
                                            m_preds_k, P_preds_k)
 
-                w_upds_k[N1:] = (self.model.P_D * w_preds_k * qs.T).reshape(-1)
+                w_upds_k[N1:] = (self.model.detection_model.get_probability()
+                                 * w_preds_k * qs.T).reshape(-1)
                 m_upds_k[N1:] = ms.transpose(1, 0, 2).reshape(N1 * N2, -1)
                 P_upds_k[N1:] = np.tile(Ps, (N2, 1, 1))
 
             w_ups_k_sum = w_upds_k.sum()
             r_upds_k = r_preds_k * w_ups_k_sum / (
-                self.model.lambda_c * self.model.pdf_c * (1 - r_preds_k)
+                (1 - r_preds_k)
+                * self.model.clutter_model.lambda_c * self.model.clutter_model.pdf_c
                 + r_preds_k * w_ups_k_sum
             )
 

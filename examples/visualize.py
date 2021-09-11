@@ -1,9 +1,12 @@
+from trackun.models.birth import MultiBernoulliGaussianBirthModel, MultiBernoulliMixtureGaussianBirthModel
 from trackun.metrics import OSPA
 
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 from tqdm import tqdm
+
+import os
 
 COLOR = ['green', 'purple']
 
@@ -53,13 +56,16 @@ def visualize_truth(truth, k, ax):
 
 
 def visualize_model(model, ax):
-    if isinstance(model.m_birth, list):
-        for m_births, P_births in zip(model.m_birth, model.P_birth):
+    if isinstance(model.birth_model, MultiBernoulliMixtureGaussianBirthModel):
+        birth_model = model.birth_model
+        for m_births, P_births in zip(birth_model.mss, birth_model.Pss):
             for m, P in zip(m_births, P_births):
                 draw_ellipse(m[[0, 2]], P[[0, 2]][:, [0, 2]], ax,
                              color='orange', fill=None, linestyle='dashed')
-    else:
-        for m, P in zip(model.m_birth, model.P_birth):
+
+    if isinstance(model.birth_model, MultiBernoulliGaussianBirthModel):
+        birth_model = model.birth_model
+        for m, P in zip(birth_model.ms, birth_model.Ps):
             draw_ellipse(m[[0, 2]], P[[0, 2]][:, [0, 2]], ax,
                          color='orange', fill=None, linestyle='dashed')
 
@@ -88,7 +94,21 @@ def visualize_est(ms, Ps, method, ax, color):
         ax.arrow(*m[[0, 2]], *3*m[[1, 3]], color=color)
 
 
-def visualize(w_ests, m_ests, P_ests, methods, model=None, obs=None, truth=None):
+def visualize(w_ests, m_ests, P_ests,
+              methods,
+              model=None, obs=None, truth=None,
+              output_dir='output'):
+
+    if os.path.isdir(output_dir):
+        if os.listdir(output_dir):
+            print('[WARNING] Non-empty output directory.')
+            choice = input('Proceed [Y/n]? ')
+            if choice == 'n':
+                print('Cancelled.')
+                return
+    else:
+        os.makedirs(output_dir)
+
     if truth is not None:
         ospa = OSPA()
         ospa_d = dict()
@@ -168,7 +188,7 @@ def visualize(w_ests, m_ests, P_ests, methods, model=None, obs=None, truth=None)
 
         plt.suptitle(f'Time: {k+1:3d}')
         fig.tight_layout()
-        plt.savefig(f'output/{k+1:03d}')
+        plt.savefig(f'{output_dir}/{k+1:03d}')
         # plt.show()
         plt.close(fig)
 

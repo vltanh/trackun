@@ -1,8 +1,39 @@
 # trackun
 
-A Python package for (multiple) object tracking
+A Python package for (multiple) object tracking using recursive Bayesian filtering
 
-## Checklist
+## **Demo**
+
+**Example 1**: GM-Bernoulli filter for single-object tracking on Constant Velocity with Gaussian noise model
+
+```bash
+python demo.py -s -m linear_gaussian -f GM-Bernoulli -o vis/output
+```
+
+<details>
+  <summary>Expand</summary>
+
+![Examples of GM-Bernoulli filter](images/gm-bernoulli.gif)
+
+</details>
+
+**Example 2**: GM-PHD and GM-CPHD filter for multi-object tracking on Constant Velocity with Gaussian noise model
+
+```bash
+python demo.py -m linear_gaussian -f GM-CPHD GM-PHD -o vis/output
+```
+
+<details>
+  <summary>Expand</summary>
+
+![Examples of GM-PHD and GM-CPHD filter](images/gm-cphd-phd.gif)
+
+</details>
+
+## **Checklist**
+
+<details>
+  <summary>Click to expand!</summary>
 
 ### Filters
 
@@ -63,22 +94,39 @@ A Python package for (multiple) object tracking
   
 </details>
 
-### Models
+### **Models**
+
+<details>
+  <summary>Click to expand!</summary>
 
 #### Motion model
 
 - [ ] Linear
-  - [ ] Constant velocity
+  - [x] Constant velocity
 - [ ] Non-Linear
   - [ ] Coordinated turn (CT)
 - [ ] General (?)
 
-#### Observation model
+#### Measurement model
 
-- [ ] Linear
+- [x] Linear
 - [ ] Non-Linear/Gen
   - [ ] Bearing
 - [ ] General (?)
+
+#### Other models
+
+- [ ] Birth model
+  - [x] Multi-Bernoulli Gaussian
+  - [x] Multi-Bernoulli Gaussian Mixture
+- [ ] Detection model
+  - [x] Constant detection probability
+- [ ] Survival model
+  - [x] Constant survival probability
+- [ ] Clutter model
+  - [x] Uniform clutter
+  
+</details>
 
 ### Metrics
 
@@ -93,10 +141,8 @@ A Python package for (multiple) object tracking
 - [ ] System design and folder structure
 - [ ] Testing
 
-## Demo
+</details>
 
-![Examples of PHD and CPHD filter](visualize/gms_cphd_phd.gif)
-
-## Credits
+## **Credits**
 
 Original MATLAB implementation comes from http://ba-tuong.vo-au.com/codes.html

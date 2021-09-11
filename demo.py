@@ -1,62 +1,49 @@
+from examples.utils import gen_model, gen_filter
 from examples.visualize import visualize
-from trackun.models import *
-from trackun.filters import *
 
 from time import time
+import argparse
 
 import numpy as np
 np.random.seed(3698)
 
-card_mode = 'multi'
-model_mode = 'linear_gaussian'
-filters_name = ['GM-CPHD', 'GM-PHD']
+parser = argparse.ArgumentParser(description='Demonstration')
+parser.add_argument('-s', '--single',
+                    action='store_true',
+                    help='toggle single object mode')
+parser.add_argument('-m', '--model',
+                    choices=['linear_gaussian', 'ct_gaussian'],
+                    required=True,
+                    help='motion/measurement model')
+parser.add_argument('-f', '--filters',
+                    nargs='+',
+                    choices=['GM-Bernoulli', 'GM-PHD', 'GM-CPHD', 'SMC-PHD'],
+                    required=True,
+                    help='filter names')
+parser.add_argument('-o', '--output',
+                    required=True,
+                    help='output directory for visualization')
+args = parser.parse_args()
 
-
-def gen_model(card_mode, model_mode):
-    if card_mode == 'multi':
-        if model_mode == 'linear_gaussian':
-            model = LinearGaussianWithBirthModel()
-        elif model_mode == 'ct_gaussian':
-            model = CTGaussianWithBirthModel()
-        else:
-            raise Exception('Unknown model mode.')
-    elif card_mode == 'single':
-        if model_mode == 'linear_gaussian':
-            model = SingleObjectLinearGaussianWithBirthModel()
-        else:
-            raise Exception('Unknown model mode.')
-    else:
-        raise Exception('Unknown cardinality mode.')
-    return model
-
-
-def gen_filter(name, model):
-    if name == 'GM-CPHD':
-        filt = CPHD_GMS_Filter(model)
-    elif name == 'GM-PHD':
-        filt = PHD_GMS_Filter(model)
-    elif name == 'GM-Bernoulli':
-        filt = Bernoulli_GMS_Filter(model)
-    elif name == 'SMC-PHD':
-        filt = PHD_SMC_Filter(model)
-    else:
-        raise Exception('Unknown filter name.')
-    return filt
+track_single = args.single
+model_id = args.model
+filter_ids = args.filters
+output_dir = args.output
 
 
 print('Begin generating examples...')
-model = gen_model(card_mode, model_mode)
+model = gen_model(track_single, model_id)
 truth = model.gen_truth()
 obs = model.gen_obs(truth)
 print('Generation done!')
 print('================')
 
 print('Begin filtering...')
-filters = [gen_filter(name, model) for name in filters_name]
+filters = [gen_filter(filter_id, model) for filter_id in filter_ids]
 
 Z = obs.Z
 ests = []
-for n, f in zip(filters_name, filters):
+for n, f in zip(filter_ids, filters):
     start = time()
     est = f.run(Z)
     elapsed = time() - start
@@ -69,7 +56,8 @@ print('================')
 print('Begin visualizing...')
 visualize(
     *list(zip(*ests)),
-    filters_name,
-    model, obs, truth
+    filter_ids,
+    model, obs, truth,
+    output_dir
 )
 print('Visualization done!')
