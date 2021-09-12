@@ -6,6 +6,7 @@ class UniformClutterModel:
         self.lambda_c = lambda_c
         self.range_c = range_c
         self.pdf_c = 1 / np.prod(range_c[:, 1] - range_c[:, 0])
+        self.rate_c = self.lambda_c * self.pdf_c
 
     def sample(self, z_dim):
         N_c = np.random.poisson(self.lambda_c)

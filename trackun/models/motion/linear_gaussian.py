@@ -19,23 +19,23 @@ class LinearGaussianMotionModel:
         self.F = F
         self.Q = Q
 
-    def get_next_state(self, X):
+    def get_next_state(self, X_prev):
         '''
         Arguments:
-            X: (N, xdim)
+            X_prev: (N, xdim)
         Returns:
             X_new: (N, xdim)
         '''
-        return X @ self.F.T
+        return X_prev @ self.F.T
 
-    def get_noisy_next_state(self, X):
+    def get_noisy_next_state(self, X_prev):
         '''
         Arguments:
-            X: (N, xdim)
+            X_prev: (N, xdim)
         Returns:
             X_new: (N, xdim)
         '''
-        X = self.get_next_state(X)
+        X = self.get_next_state(X_prev)
         V = randmvn(np.zeros(self.x_dim),
                     self.Q,
                     size=X.shape[0])
