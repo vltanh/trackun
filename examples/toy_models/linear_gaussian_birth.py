@@ -1,5 +1,3 @@
-import numpy as np
-
 from trackun.models.motion import ConstantVelocityGaussianMotionModel
 from trackun.models.measurement import ConstantVelocityGaussianMeasurementModel
 from trackun.models.clutter import UniformClutterModel
@@ -7,6 +5,8 @@ from trackun.models.birth import MultiBernoulliGaussianBirthModel
 from trackun.models.survival import ConstantSurvivalModel
 from trackun.models.detection import ConstantDetectionModel
 from examples.generate_data import Observation, Truth
+
+import numpy as np
 
 __all__ = [
     'LinearGaussianWithBirthModel',
@@ -26,13 +26,13 @@ class LinearGaussianWithBirthModel:
             ConstantVelocityGaussianMeasurementModel(dim=2,
                                                      noise_cov=R)
 
-        # State/Observation dimensions
+        # Dimensions
         self.x_dim = self.motion_model.x_dim
         self.z_dim = self.measurement_model.z_dim
 
-        # Birth parameters
+        # Birth model
         self.birth_model = MultiBernoulliGaussianBirthModel()
-        P0 = np.diag([100., 100., 100., 100.])
+        P0 = np.diag([10., 10., 10., 10.]) ** 2
         self.birth_model.add(w=.03, m=[0., 0., 0., 0.],       P=P0)
         self.birth_model.add(w=.03, m=[400., 0., -600., 0.],  P=P0)
         self.birth_model.add(w=.03, m=[-800., 0., -200., 0.], P=P0)

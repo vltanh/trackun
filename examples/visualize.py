@@ -1,4 +1,5 @@
-from trackun.models.birth import MultiBernoulliGaussianBirthModel, MultiBernoulliMixtureGaussianBirthModel
+import enum
+from trackun.models.birth import *
 from trackun.metrics import OSPA
 
 import numpy as np
@@ -55,50 +56,55 @@ def visualize_truth(truth, k, ax):
                 label='True trajectory')
 
 
+def plot_2d_gaussian_mixture(gm, ax, label, color, linestyle='solid'):
+    ax.scatter(gm.m[:, 0], gm.m[:, 2],
+               c=color, s=10,
+               label=label)
+    for m, P in zip(gm.m, gm.P):
+        draw_ellipse(m[[0, 2]], P[[0, 2]][:, [0, 2]],
+                     ax, color=color, fill=None, linestyle=linestyle)
+
+
 def visualize_model(model, ax):
     if isinstance(model.birth_model, MultiBernoulliMixtureGaussianBirthModel):
         birth_model = model.birth_model
-        for m_births, P_births in zip(birth_model.mss, birth_model.Pss):
-            for m, P in zip(m_births, P_births):
-                draw_ellipse(m[[0, 2]], P[[0, 2]][:, [0, 2]], ax,
-                             color='orange', fill=None, linestyle='dashed')
+        for gm in birth_model.gms:
+            plot_2d_gaussian_mixture(gm, ax,
+                                     label='Birth site',
+                                     color='orange',
+                                     linestyle='dashed')
 
     if isinstance(model.birth_model, MultiBernoulliGaussianBirthModel):
         birth_model = model.birth_model
-        for m, P in zip(birth_model.ms, birth_model.Ps):
-            draw_ellipse(m[[0, 2]], P[[0, 2]][:, [0, 2]], ax,
-                         color='orange', fill=None, linestyle='dashed')
+        plot_2d_gaussian_mixture(birth_model.gm, ax,
+                                 label='Birth site',
+                                 color='orange',
+                                 linestyle='dashed')
 
 
 def visualize_obs(obs, ax, is_clutter=None):
-    ax.scatter(obs[:, 0],
-               obs[:, 1],
+    ax.scatter(obs[:, 0], obs[:, 1],
                c='black', alpha=0.3,
                label='Detection')
 
     if is_clutter is not None:
-        ax.scatter(obs[is_clutter, 0],
-                   obs[is_clutter, 1],
+        ax.scatter(obs[is_clutter, 0], obs[is_clutter, 1],
                    c='red', alpha=0.3,
                    label='Clutter')
 
 
-def visualize_est(ms, Ps, method, ax, color):
-    ax.scatter(ms[:, 0], ms[:, 2],
-               c=color, s=10,
-               label=f'Prediction ({method})')
-    for m, P in zip(ms, Ps):
-        draw_ellipse(m[[0, 2]],
-                     P[[0, 2]][:, [0, 2]],
-                     ax, color=color, fill=None)
+def visualize_est(est, ax, color, label):
+    plot_2d_gaussian_mixture(est.gm, ax,
+                             label=label,
+                             color=color)
+    for m in est.gm.m:
         ax.arrow(*m[[0, 2]], *3*m[[1, 3]], color=color)
 
 
-def visualize(w_ests, m_ests, P_ests,
-              methods,
+def visualize(ests,
+              filter_ids,
               model=None, obs=None, truth=None,
               output_dir='output'):
-
     if os.path.isdir(output_dir):
         if os.listdir(output_dir):
             print('[WARNING] Non-empty output directory.')
@@ -110,19 +116,18 @@ def visualize(w_ests, m_ests, P_ests,
         os.makedirs(output_dir)
 
     if truth is not None:
-        ospa = OSPA()
-        ospa_d = dict()
-        for i, method in enumerate(methods):
-            ospa_d[method] = {
-                'total': np.zeros(obs.K),
-                'loc': np.zeros(obs.K),
-                'card': np.zeros(obs.K)
-            }
-            for k in range(obs.K):
-                t = ospa(truth.X[k], m_ests[i][k])
-                ospa_d[method]['total'][k] = t[0]
-                ospa_d[method]['loc'][k] = t[1]
-                ospa_d[method]['card'][k] = t[2]
+        truth_cnt = []
+    cnts = {
+        filter_id: []
+        for filter_id in filter_ids
+    }
+    OSPA_totals, OSPA_locs, OSPA_cards = [
+        {
+            filter_id: []
+            for filter_id in filter_ids
+        }
+        for _ in range(3)
+    ]
 
     for k in tqdm(range(obs.K)):
         fig = plt.figure(figsize=(20, 10), dpi=100)
@@ -134,32 +139,48 @@ def visualize(w_ests, m_ests, P_ests,
         ax_ospa_loc = fig.add_subplot(gs[2, 1])
         ax_ospa_card = fig.add_subplot(gs[3, 1])
 
+        # Visualize model
         if model is not None:
             visualize_model(model, ax_vis)
 
+        # Visualize truth
         if truth is not None:
             visualize_truth(truth, k+1, ax_vis)
-            ax_count.plot(range(1, k+2), [len(x) for x in truth.X[:k+1]],
-                          label=f'True count', color='blue')
-            for method, color in zip(methods, COLOR):
-                ax_ospa.plot(range(1, k+2),
-                             ospa_d[method]['total'][:k+1],
-                             c=color, label=method)
-                ax_ospa_loc.plot(range(1, k+2),
-                                 ospa_d[method]['loc'][:k+1],
-                                 c=color, label=method)
-                ax_ospa_card.plot(range(1, k+2),
-                                  ospa_d[method]['card'][:k+1],
-                                  c=color, label=method)
 
+            # Graph plot count
+            truth_cnt.append(len(truth.X[k]))
+            ax_count.plot(range(1, k+2), truth_cnt,
+                          label=f'True count', color='blue')
+
+            # Graph metrics
+            ospa = OSPA()
+            for i, (filter_id, color) in enumerate(zip(filter_ids, COLOR)):
+                ospa_total, ospa_loc, ospa_card = \
+                    ospa(truth.X[k], ests[i][k].gm.m)
+                OSPA_totals[filter_id].append(ospa_total)
+                OSPA_locs[filter_id].append(ospa_loc)
+                OSPA_cards[filter_id].append(ospa_card)
+
+                ax_ospa.plot(range(1, k+2), OSPA_totals[filter_id],
+                             c=color, label=filter_id)
+                ax_ospa_loc.plot(range(1, k+2), OSPA_locs[filter_id],
+                                 c=color, label=filter_id)
+                ax_ospa_card.plot(range(1, k+2), OSPA_cards[filter_id],
+                                  c=color, label=filter_id)
+
+        # Visualize observations
         if obs is not None:
             visualize_obs(obs.Z[k], ax_vis)
 
-        for i in range(len(methods)):
-            visualize_est(m_ests[i][k], P_ests[i][k],
-                          methods[i], ax_vis, color=COLOR[i])
-            ax_count.scatter(range(1, k+2), [len(m) for m in m_ests[i][:k+1]],
-                             label=methods[i], color=COLOR[i])
+        # Visualize estimations
+        for i, filter_id in enumerate(filter_ids):
+            visualize_est(ests[i][k], ax_vis,
+                          color=COLOR[i],
+                          label=f'Prediction({filter_id})')
+
+            cnts[filter_id].append(len(ests[i][k].gm.m))
+            ax_count.scatter(range(1, k+2), cnts[filter_id],
+                             label=filter_id, color=COLOR[i])
 
         ax_vis.set_xlim(-1000, 1000)
         ax_vis.set_ylim(-1000, 1000)
@@ -193,7 +214,7 @@ def visualize(w_ests, m_ests, P_ests,
         plt.close(fig)
 
 
-def visualize_input(obs, truth):
+def visualize_input(obs, truth=None):
     for k in tqdm(range(obs.K)):
         fig = plt.figure(figsize=(10, 10), dpi=100)
         gs = fig.add_gridspec(1, 1)
@@ -202,8 +223,7 @@ def visualize_input(obs, truth):
         if truth is not None:
             visualize_truth(truth, k+1, ax_vis)
 
-        if obs is not None:
-            visualize_obs(obs.Z[k], ax_vis, obs.is_clutter[k])
+        visualize_obs(obs.Z[k], ax_vis, obs.is_clutter[k])
 
         ax_vis.set_xlim(-1000, 1000)
         ax_vis.set_ylim(-1000, 1000)

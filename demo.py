@@ -65,7 +65,7 @@ print('================')
 
 print('Begin visualizing...')
 visualize(
-    *list(zip(*ests)),
+    ests,
     filter_ids,
     model, obs, truth,
     output_dir
