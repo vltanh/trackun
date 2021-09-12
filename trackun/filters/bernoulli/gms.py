@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from trackun.filters.base import GMSFilter
 from trackun.common.gaussian_mixture import GaussianMixture
 from trackun.common.kalman_filter import KalmanFilter
 from trackun.common.gating import EllipsoidallGating
@@ -19,17 +20,21 @@ class KF_Bernoulli_Data:
     gm: GaussianMixture
 
 
-class Bernoulli_GMS_Filter:
-    def __init__(self, model, use_gating=True) -> None:
+class Bernoulli_GMS_Filter(GMSFilter):
+    def __init__(self, model,
+                 L_max=100,
+                 elim_thres=1e-5,
+                 merge_threshold=4,
+                 use_gating=True,
+                 pG=0.999) -> None:
         self.model = model
 
-        self.L_max = 100
-        self.elim_threshold = 1e-5
-        self.merge_threshold = 4
+        self.L_max = L_max
+        self.elim_threshold = elim_thres
+        self.merge_threshold = merge_threshold
 
-        self.P_G = 0.999
-        self.gamma = chi2.ppf(self.P_G, self.model.z_dim)
         self.use_gating = use_gating
+        self.gamma = chi2.ppf(pG, self.model.z_dim)
 
     def init(self):
         r_upds_k = 0.
@@ -59,10 +64,10 @@ class Bernoulli_GMS_Filter:
                                  upds_k.gm.m, upds_k.gm.P)
 
         # Predict born states
-        w_preds_k[:L] = self.model.birth_model.wss[0] \
+        w_preds_k[:L] = self.model.birth_model.gms[0].w \
             * self.model.birth_model.rs * (1 - upds_k.r)
-        m_preds_k[:L] = self.model.birth_model.mss[0]
-        P_preds_k[:L] = self.model.birth_model.Pss[0]
+        m_preds_k[:L] = self.model.birth_model.gms[0].m
+        P_preds_k[:L] = self.model.birth_model.gms[0].P
 
         # Normalize prediction
         w_preds_k = w_preds_k / w_preds_k.sum()
@@ -93,15 +98,14 @@ class Bernoulli_GMS_Filter:
         N2 = cand_Z.shape[0]
         M = N1 * (N2 + 1)
 
-        w_upds_k, m_upds_k, P_upds_k = \
-            GaussianMixture.get_empty(M, self.model.x_dim).unpack()
+        gm_upds_k = GaussianMixture.get_empty(M, self.model.x_dim)
 
         # Miss detection
-        w_upds_k[:N1] = preds_k.gm.w \
+        gm_upds_k.w[:N1] = preds_k.gm.w \
             * (1 - self.model.detection_model.get_probability()) \
-            * self.model.clutter_model.lambda_c * self.model.clutter_model.pdf_c
-        m_upds_k[:N1] = preds_k.gm.m.copy()
-        P_upds_k[:N1] = preds_k.gm.P.copy()
+            * self.model.clutter_model.rate_c
+        gm_upds_k.m[:N1] = preds_k.gm.m.copy()
+        gm_upds_k.P[:N1] = preds_k.gm.P.copy()
 
         # Detection
         if N2 > 0:
@@ -110,21 +114,20 @@ class Bernoulli_GMS_Filter:
                                              self.model.measurement_model.R,
                                              preds_k.gm.m, preds_k.gm.P)
 
-            w_upds_k[N1:] = (self.model.detection_model.get_probability()
-                             * preds_k.gm.w * qs.T).reshape(-1)
-            m_upds_k[N1:] = ms.transpose(1, 0, 2).reshape(N1 * N2, -1)
-            P_upds_k[N1:] = np.tile(Ps, (N2, 1, 1))
+            gm_upds_k.w[N1:] = (self.model.detection_model.get_probability()
+                                * preds_k.gm.w * qs.T).reshape(-1)
+            gm_upds_k.m[N1:] = ms.transpose(1, 0, 2).reshape(N1 * N2, -1)
+            gm_upds_k.P[N1:] = np.tile(Ps, (N2, 1, 1))
 
-        w_ups_k_sum = w_upds_k.sum()
+        w_ups_k_sum = gm_upds_k.w.sum()
         r_upds_k = preds_k.r * w_ups_k_sum / (
             (1 - preds_k.r)
-            * self.model.clutter_model.lambda_c * self.model.clutter_model.pdf_c
+            * self.model.clutter_model.rate_c
             + preds_k.r * w_ups_k_sum
         )
-        w_upds_k = w_upds_k / w_ups_k_sum
+        gm_upds_k.w = gm_upds_k.w / w_ups_k_sum
 
         # == Post-processing ==
-        gm_upds_k = GaussianMixture(w_upds_k, m_upds_k, P_upds_k)
         gm_upds_k = self.postprocess(gm_upds_k)
 
         return KF_Bernoulli_Data(r_upds_k, gm_upds_k)
@@ -156,6 +159,4 @@ class Bernoulli_GMS_Filter:
             ests_k = self.estimate(upds_k)
             ests.append(ests_k)
 
-        return [est.gm.w for est in ests],\
-            [est.gm.m for est in ests],\
-            [est.gm.P for est in ests]
+        return ests

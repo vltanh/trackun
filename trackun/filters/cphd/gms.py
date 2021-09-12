@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 
-from trackun.common.kalman_filter import KalmanFilter
+from trackun.filters.base import GMSFilter
 from trackun.common.gaussian_mixture import GaussianMixture
+from trackun.common.kalman_filter import KalmanFilter
 from trackun.common.gating import EllipsoidallGating
 
 import numpy as np
@@ -262,7 +263,7 @@ def compute_upsilons(N_max, N2, lambda_c, P_D, w_preds_k, esfvals_E, esfvals_D):
     return upsilon0_E, upsilon1_E, upsilon1_D
 
 
-class CPHD_GMS_Filter:
+class CPHD_GMS_Filter(GMSFilter):
     def __init__(self,
                  model,
                  N_max=20,
@@ -297,31 +298,28 @@ class CPHD_GMS_Filter:
         N = upds_k.gm.w.shape[0]
         L = self.model.birth_model.N
 
-        w_preds_k, m_preds_k, P_preds_k = \
-            GaussianMixture.get_empty(N+L, self.model.x_dim).unpack()
+        gm_preds_k = GaussianMixture.get_empty(N+L, self.model.x_dim)
 
         # Predict surviving states
-        w_preds_k[L:] = \
+        gm_preds_k.w[L:] = \
             self.model.survival_model.get_probability() * upds_k.gm.w
-        m_preds_k[L:], P_preds_k[L:] = \
+        gm_preds_k.m[L:], gm_preds_k.P[L:] = \
             KalmanFilter.predict(self.model.motion_model.F,
                                  self.model.motion_model.Q,
                                  upds_k.gm.m, upds_k.gm.P)
 
         # Predict born states
-        w_preds_k[:L] = self.model.birth_model.ws
-        m_preds_k[:L] = self.model.birth_model.ms
-        P_preds_k[:L] = self.model.birth_model.Ps
+        gm_preds_k.w[:L], gm_preds_k.m[:L], gm_preds_k.P[:L] = \
+            self.model.birth_model.gm.unpack()
 
         # Predict cardinality
         c_preds_k = \
             predict_cardinality(
                 self.N_max,
                 self.model.survival_model.get_probability(),
-                self.model.birth_model.ws.sum(),
+                self.model.birth_model.gm.w.sum(),
                 upds_k.c)
 
-        gm_preds_k = GaussianMixture(w_preds_k, m_preds_k, P_preds_k)
         return KF_CPHD_Data(gm_preds_k, c_preds_k)
 
     def gating(self, Z, preds_k):
@@ -345,8 +343,7 @@ class CPHD_GMS_Filter:
         N2 = cand_Z.shape[0]
         M = N1 * (N2 + 1)
 
-        w_upds_k, m_upds_k, P_upds_k = \
-            GaussianMixture.get_empty(M, self.model.x_dim).unpack()
+        gm_upds_k = GaussianMixture.get_empty(M, self.model.x_dim)
 
         # Compute Kalman update
         if N2 > 0:
@@ -378,11 +375,11 @@ class CPHD_GMS_Filter:
                              preds_k.gm.w, esfvals_E, esfvals_D)
 
         # Miss detection
-        w_upds_k[:N1] = preds_k.gm.w \
+        gm_upds_k.w[:N1] = preds_k.gm.w \
             * (1 - self.model.detection_model.get_probability()) \
             * (upsilon1_E @ preds_k.c) / (upsilon0_E @ preds_k.c)
-        m_upds_k[:N1] = preds_k.gm.m.copy()
-        P_upds_k[:N1] = preds_k.gm.P.copy()
+        gm_upds_k.m[:N1] = preds_k.gm.m.copy()
+        gm_upds_k.P[:N1] = preds_k.gm.P.copy()
 
         # Detection
         if N2 > 0:
@@ -390,17 +387,16 @@ class CPHD_GMS_Filter:
                 * self.model.detection_model.get_probability() \
                 * (upsilon1_D.T @ preds_k.c) / (upsilon0_E @ preds_k.c) / \
                 self.model.clutter_model.pdf_c
-            w_upds_k[N1:] = w.T.reshape(-1)
+            gm_upds_k.w[N1:] = w.T.reshape(-1)
 
-            m_upds_k[N1:] = ms.transpose(1, 0, 2).reshape(N1 * N2, -1)
-            P_upds_k[N1:] = np.tile(Ps, (N2, 1, 1))
+            gm_upds_k.m[N1:] = ms.transpose(1, 0, 2).reshape(N1 * N2, -1)
+            gm_upds_k.P[N1:] = np.tile(Ps, (N2, 1, 1))
 
         # Update cardinality
         c_upds_k = upsilon0_E * preds_k.c
         c_upds_k = c_upds_k / c_upds_k.sum()
 
         # == Post-processing ==
-        gm_upds_k = GaussianMixture(w_upds_k, m_upds_k, P_upds_k)
         gm_upds_k = self.postprocess(gm_upds_k)
 
         return KF_CPHD_Data(gm_upds_k, c_upds_k)
@@ -430,6 +426,4 @@ class CPHD_GMS_Filter:
             ests_k = self.estimate(upds_k)
             ests.append(ests_k)
 
-        return [est.gm.w for est in ests],\
-            [est.gm.m for est in ests],\
-            [est.gm.P for est in ests]
+        return ests

@@ -2,20 +2,15 @@ from dataclasses import dataclass
 
 import numpy as np
 import numpy.linalg as la
+from numpy.random import multivariate_normal as randmvn
 import numba
 
 
-@dataclass
-class Gaussian:
-    m: np.ndarray
-    P: np.ndarray
-
-
-@dataclass
 class GaussianMixture:
-    w: np.ndarray
-    m: np.ndarray
-    P: np.ndarray
+    def __init__(self, w, m, P) -> None:
+        self.w = w
+        self.m = m
+        self.P = P
 
     @staticmethod
     def get_empty(size, dim):
@@ -29,6 +24,22 @@ class GaussianMixture:
 
     def unpack(self):
         return self.w, self.m, self.P
+
+    def add(self, w, m, P):
+        ws = np.append(self.w, w)
+        ms = np.append(self.m, m, axis=0)
+        Ps = np.append(self.P, P, axis=0)
+        return GaussianMixture(ws, ms, Ps)
+
+    def sample(self, size):
+        X = np.empty((size, self.m.shape[-1]))
+        comps = np.random.choice(self.w.shape[0], size=size,
+                                 p=self.w / self.w.sum())
+        for i in range(self.w.shape[0]):
+            mask = comps == i
+            X[mask] = randmvn(self.m[i], self.P[i],
+                              size=mask.sum())
+        return X
 
     def prune(self, thres):
         return self.select(self.w > thres)

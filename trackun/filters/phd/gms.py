@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from trackun.filters.base import GMSFilter
 from trackun.common.gaussian_mixture import GaussianMixture
 from trackun.common.kalman_filter import KalmanFilter
 from trackun.common.gating import EllipsoidallGating
@@ -18,7 +19,7 @@ class KF_PHD_Data:
     gm: GaussianMixture
 
 
-class PHD_GMS_Filter:
+class PHD_GMS_Filter(GMSFilter):
     def __init__(self,
                  model,
                  L_max=100,
@@ -47,23 +48,20 @@ class PHD_GMS_Filter:
         N = upds_k.gm.w.shape[0]
         L = self.model.birth_model.N
 
-        w_preds_k, m_preds_k, P_preds_k = \
-            GaussianMixture.get_empty(N+L, self.model.x_dim).unpack()
+        gm_preds_k = GaussianMixture.get_empty(N+L, self.model.x_dim)
 
         # Predict surviving states
-        w_preds_k[L:] = \
+        gm_preds_k.w[L:] = \
             self.model.survival_model.get_probability() * upds_k.gm.w
-        m_preds_k[L:], P_preds_k[L:] = \
+        gm_preds_k.m[L:], gm_preds_k.P[L:] = \
             KalmanFilter.predict(self.model.motion_model.F,
                                  self.model.motion_model.Q,
                                  upds_k.gm.m, upds_k.gm.P)
 
         # Predict born states
-        w_preds_k[:L] = self.model.birth_model.ws
-        m_preds_k[:L] = self.model.birth_model.ms
-        P_preds_k[:L] = self.model.birth_model.Ps
+        gm_preds_k.w[:L], gm_preds_k.m[:L], gm_preds_k.P[:L] = \
+            self.model.birth_model.gm.unpack()
 
-        gm_preds_k = GaussianMixture(w_preds_k, m_preds_k, P_preds_k)
         return KF_PHD_Data(gm_preds_k)
 
     def gating(self, Z, preds_k):
@@ -89,14 +87,13 @@ class PHD_GMS_Filter:
         N2 = cand_Z.shape[0]
         M = N1 * (N2 + 1)
 
-        w_upds_k, m_upds_k, P_upds_k = \
-            GaussianMixture.get_empty(M, self.model.x_dim).unpack()
+        gm_upds_k = GaussianMixture.get_empty(M, self.model.x_dim)
 
         # Miss detection
-        w_upds_k[:N1] = preds_k.gm.w \
+        gm_upds_k.w[:N1] = preds_k.gm.w \
             * (1 - self.model.detection_model.get_probability())
-        m_upds_k[:N1] = preds_k.gm.m.copy()
-        P_upds_k[:N1] = preds_k.gm.P.copy()
+        gm_upds_k.m[:N1] = preds_k.gm.m.copy()
+        gm_upds_k.P[:N1] = preds_k.gm.P.copy()
 
         # Detection
         if N2 > 0:
@@ -110,14 +107,13 @@ class PHD_GMS_Filter:
             w = w / (self.model.clutter_model.lambda_c
                      * self.model.clutter_model.pdf_c
                      + w.sum(1)[:, np.newaxis])
-            w_upds_k[N1:] = w.reshape(-1)
+            gm_upds_k.w[N1:] = w.reshape(-1)
 
-            m_upds_k[N1:] = \
+            gm_upds_k.m[N1:] = \
                 ms.transpose(1, 0, 2).reshape(-1, self.model.x_dim)
-            P_upds_k[N1:] = np.tile(Ps, (N2, 1, 1))
+            gm_upds_k.P[N1:] = np.tile(Ps, (N2, 1, 1))
 
         # == Post-processing ==
-        gm_upds_k = GaussianMixture(w_upds_k, m_upds_k, P_upds_k)
         gm_upds_k = self.postprocess(gm_upds_k)
 
         return KF_PHD_Data(gm_upds_k)
@@ -151,6 +147,4 @@ class PHD_GMS_Filter:
             ests_k = self.estimate(upds_k)
             ests.append(ests_k)
 
-        return [est.gm.w for est in ests],\
-            [est.gm.m for est in ests],\
-            [est.gm.P for est in ests]
+        return ests
