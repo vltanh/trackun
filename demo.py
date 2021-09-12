@@ -30,17 +30,25 @@ model_id = args.model
 filter_ids = args.filters
 output_dir = args.output
 
+# ======================================
+
+model = gen_model(track_single, model_id)
+filters = [
+    gen_filter(filter_id, model)
+    for filter_id in filter_ids
+]
+
+# ======================================
 
 print('Begin generating examples...')
-model = gen_model(track_single, model_id)
 truth = model.gen_truth()
 obs = model.gen_obs(truth)
 print('Generation done!')
 print('================')
 
-print('Begin filtering...')
-filters = [gen_filter(filter_id, model) for filter_id in filter_ids]
+# ======================================
 
+print('Begin filtering...')
 Z = obs.Z
 ests = []
 for n, f in zip(filter_ids, filters):
@@ -52,6 +60,8 @@ for n, f in zip(filter_ids, filters):
     print(f'[{n}] Done! Took {elapsed} (s)')
 print('Filtering done!')
 print('================')
+
+# ======================================
 
 print('Begin visualizing...')
 visualize(

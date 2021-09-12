@@ -22,27 +22,45 @@ parser.add_argument('-f', '--filter',
 parser.add_argument('-n', '--nruns',
                     type=int, default=100,
                     help='number of runs (default: 100)')
+parser.add_argument('-w', '--warmups',
+                    type=int, default=10,
+                    help='number of runs for warmups (default: 10)')
 args = parser.parse_args()
 
 track_single = args.single
 model_id = args.model
 filter_id = args.filter
 nruns = args.nruns
+warmups = args.warmups
 
-print('Begin generating examples...')
+# ======================================
+
 model = gen_model(track_single, model_id)
+filt = gen_filter(filter_id, model)
+
+# ======================================
+
+print('Generating examples...')
 scenarios = []
-for _ in range(nruns):
+for _ in tqdm(range(nruns + 1)):
     truth = model.gen_truth()
     obs = model.gen_obs(truth)
     scenarios.append(obs)
 print('Generation done!')
 print('================')
 
+# ======================================
+
+print('Warming up...')
+for _ in tqdm(range(warmups)):
+    filt.run(scenarios[0].Z)
+print('Warming up done!')
+
+# =============================
+
 print('Benchmarking...')
-filt = gen_filter(filter_id, model)
 meter = []
-bar = tqdm(scenarios)
+bar = tqdm(scenarios[1:])
 for obs in bar:
     Z = obs.Z
 
@@ -59,6 +77,7 @@ for obs in bar:
 print('Benchmarking done!')
 print('=================')
 
-print('Result:')
-print('\tAverage time:', np.mean(meter))
-print('\tStd time:', np.std(meter))
+# ======================================
+
+print('Average time:', np.mean(meter))
+print('Std time:', np.std(meter))
