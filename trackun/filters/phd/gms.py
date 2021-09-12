@@ -1,20 +1,21 @@
 from dataclasses import dataclass
 
-from trackun.common.kalman import kalman_predict, kalman_update
-from trackun.common.hypotheses_reduction import prune, merge_and_cap
-from trackun.common.gating import gate
+from trackun.common.gaussian_mixture import GaussianMixture
+from trackun.common.kalman_filter import KalmanFilter
+from trackun.common.gating import EllipsoidallGating
 
 import numpy as np
 from scipy.stats.distributions import chi2
 
-__all__ = ['PHD_GMS_Filter']
+__all__ = [
+    'KF_PHD_Data',
+    'PHD_GMS_Filter',
+]
 
 
 @dataclass
 class KF_PHD_Data:
-    w: np.ndarray
-    m: np.ndarray
-    P: np.ndarray
+    gm: GaussianMixture
 
 
 class PHD_GMS_Filter:
@@ -38,48 +39,44 @@ class PHD_GMS_Filter:
         w = np.array([1.])
         m = np.zeros((1, self.model.x_dim))
         P = np.eye(self.model.x_dim)[np.newaxis, :]
-        return KF_PHD_Data(w, m, P)
+
+        gm = GaussianMixture(w, m, P)
+        return KF_PHD_Data(gm)
 
     def predict(self, upds_k):
-        N = upds_k.w.shape[0]
+        N = upds_k.gm.w.shape[0]
         L = self.model.birth_model.N
 
-        w_preds_k = np.empty((N+L,))
-        m_preds_k = np.empty((N+L, self.model.x_dim))
-        P_preds_k = np.empty((N+L, self.model.x_dim, self.model.x_dim))
+        w_preds_k, m_preds_k, P_preds_k = \
+            GaussianMixture.get_empty(N+L, self.model.x_dim).unpack()
 
         # Predict surviving states
         w_preds_k[L:] = \
-            self.model.survival_model.get_probability() * upds_k.w
+            self.model.survival_model.get_probability() * upds_k.gm.w
         m_preds_k[L:], P_preds_k[L:] = \
-            kalman_predict(self.model.motion_model.F,
-                           self.model.motion_model.Q,
-                           upds_k.m, upds_k.P)
+            KalmanFilter.predict(self.model.motion_model.F,
+                                 self.model.motion_model.Q,
+                                 upds_k.gm.m, upds_k.gm.P)
 
         # Predict born states
         w_preds_k[:L] = self.model.birth_model.ws
         m_preds_k[:L] = self.model.birth_model.ms
         P_preds_k[:L] = self.model.birth_model.Ps
 
-        return KF_PHD_Data(w_preds_k, m_preds_k, P_preds_k)
+        gm_preds_k = GaussianMixture(w_preds_k, m_preds_k, P_preds_k)
+        return KF_PHD_Data(gm_preds_k)
 
     def gating(self, Z, preds_k):
-        return gate(Z,
-                    self.gamma,
-                    self.model.measurement_model.H,
-                    self.model.measurement_model.R,
-                    preds_k.m, preds_k.P)
+        return EllipsoidallGating.filter(Z,
+                                         self.gamma,
+                                         self.model.measurement_model.H,
+                                         self.model.measurement_model.R,
+                                         preds_k.gm.m, preds_k.gm.P)
 
-    def postprocess(self, w_upds_k, m_upds_k, P_upds_k):
-        w_upds_k, m_upds_k, P_upds_k = prune(
-            w_upds_k, m_upds_k, P_upds_k,
-            self.elim_threshold)
-
-        w_upds_k, m_upds_k, P_upds_k = merge_and_cap(
-            w_upds_k, m_upds_k, P_upds_k,
-            self.merge_threshold, self.L_max)
-
-        return w_upds_k, m_upds_k, P_upds_k
+    def postprocess(self, gm_ups_k):
+        gm_ups_k = gm_ups_k.prune(self.elim_threshold)
+        gm_ups_k = gm_ups_k.merge_and_cap(self.merge_threshold, self.L_max)
+        return gm_ups_k
 
     def update(self, Z, preds_k):
         # == Gating ==
@@ -88,28 +85,27 @@ class PHD_GMS_Filter:
             else Z
 
         # == Update ==
-        N1 = preds_k.w.shape[0]
+        N1 = preds_k.gm.w.shape[0]
         N2 = cand_Z.shape[0]
         M = N1 * (N2 + 1)
 
-        m_upds_k = np.empty((M, self.model.x_dim))
-        P_upds_k = np.empty((M, self.model.x_dim, self.model.x_dim))
-        w_upds_k = np.empty((M,))
+        w_upds_k, m_upds_k, P_upds_k = \
+            GaussianMixture.get_empty(M, self.model.x_dim).unpack()
 
         # Miss detection
-        m_upds_k[:N1] = preds_k.m.copy()
-        P_upds_k[:N1] = preds_k.P.copy()
-        w_upds_k[:N1] = preds_k.w \
+        w_upds_k[:N1] = preds_k.gm.w \
             * (1 - self.model.detection_model.get_probability())
+        m_upds_k[:N1] = preds_k.gm.m.copy()
+        P_upds_k[:N1] = preds_k.gm.P.copy()
 
         # Detection
         if N2 > 0:
-            qs, ms, Ps = kalman_update(cand_Z,
-                                       self.model.measurement_model.H,
-                                       self.model.measurement_model.R,
-                                       preds_k.m, preds_k.P)
+            qs, ms, Ps = KalmanFilter.update(cand_Z,
+                                             self.model.measurement_model.H,
+                                             self.model.measurement_model.R,
+                                             preds_k.gm.m, preds_k.gm.P)
 
-            w = (preds_k.w * qs.T) \
+            w = (preds_k.gm.w * qs.T) \
                 * self.model.detection_model.get_probability()
             w = w / (self.model.clutter_model.lambda_c
                      * self.model.clutter_model.pdf_c
@@ -121,17 +117,19 @@ class PHD_GMS_Filter:
             P_upds_k[N1:] = np.tile(Ps, (N2, 1, 1))
 
         # == Post-processing ==
-        w_upds_k, m_upds_k, P_upds_k = \
-            self.postprocess(w_upds_k, m_upds_k, P_upds_k)
+        gm_upds_k = GaussianMixture(w_upds_k, m_upds_k, P_upds_k)
+        gm_upds_k = self.postprocess(gm_upds_k)
 
-        return KF_PHD_Data(w_upds_k, m_upds_k, P_upds_k)
+        return KF_PHD_Data(gm_upds_k)
 
     def estimate(self, upds_k):
-        cnt = upds_k.w.round().astype(np.int32)
-        w_ests_k = upds_k.w.repeat(cnt, axis=0)
-        m_ests_k = upds_k.m.repeat(cnt, axis=0)
-        P_ests_k = upds_k.P.repeat(cnt, axis=0)
-        return KF_PHD_Data(w_ests_k, m_ests_k, P_ests_k)
+        cnt = upds_k.gm.w.round().astype(np.int32)
+        w_ests_k = upds_k.gm.w.repeat(cnt, axis=0)
+        m_ests_k = upds_k.gm.m.repeat(cnt, axis=0)
+        P_ests_k = upds_k.gm.P.repeat(cnt, axis=0)
+
+        gm_ests_k = GaussianMixture(w_ests_k, m_ests_k, P_ests_k)
+        return KF_PHD_Data(gm_ests_k)
 
     def step(self, Z, upds_k):
         # == Predict ==
@@ -153,6 +151,6 @@ class PHD_GMS_Filter:
             ests_k = self.estimate(upds_k)
             ests.append(ests_k)
 
-        return [est.w for est in ests],\
-            [est.m for est in ests],\
-            [est.P for est in ests]
+        return [est.gm.w for est in ests],\
+            [est.gm.m for est in ests],\
+            [est.gm.P for est in ests]

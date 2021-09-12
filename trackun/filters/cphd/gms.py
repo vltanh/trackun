@@ -1,21 +1,22 @@
 from dataclasses import dataclass
 
-from trackun.common.kalman import kalman_predict, kalman_update
-from trackun.common.hypotheses_reduction import prune, merge_and_cap
-from trackun.common.gating import gate
+from trackun.common.kalman_filter import KalmanFilter
+from trackun.common.gaussian_mixture import GaussianMixture
+from trackun.common.gating import EllipsoidallGating
 
 import numpy as np
 from scipy.stats.distributions import chi2
 import numba
 
-__all__ = ['CPHD_GMS_Filter']
+__all__ = [
+    'KF_CPHD_Data',
+    'CPHD_GMS_Filter',
+]
 
 
 @dataclass
 class KF_CPHD_Data:
-    w: np.ndarray
-    m: np.ndarray
-    P: np.ndarray
+    gm: GaussianMixture
     c: np.ndarray
 
 
@@ -282,29 +283,30 @@ class CPHD_GMS_Filter:
         self.gamma = chi2.ppf(pG, self.model.z_dim)
 
     def init(self):
-        w_upds_k = np.array([1.])
-        m_upds_k = np.zeros((1, self.model.x_dim))
-        P_upds_k = np.eye(self.model.x_dim)[np.newaxis, :]
+        w = np.array([1.])
+        m = np.zeros((1, self.model.x_dim))
+        P = np.eye(self.model.x_dim)[np.newaxis, :]
 
-        c_upds_k = np.zeros(1 + self.N_max)
-        c_upds_k[0] = 1.
+        c = np.zeros(1 + self.N_max)
+        c[0] = 1.
 
-        return KF_CPHD_Data(w_upds_k, m_upds_k, P_upds_k, c_upds_k)
+        gm = GaussianMixture(w, m, P)
+        return KF_CPHD_Data(gm, c)
 
     def predict(self, upds_k):
-        N = upds_k.w.shape[0]
+        N = upds_k.gm.w.shape[0]
         L = self.model.birth_model.N
 
-        w_preds_k = np.empty((N+L,))
-        m_preds_k = np.empty((N+L, self.model.x_dim))
-        P_preds_k = np.empty((N+L, self.model.x_dim, self.model.x_dim))
+        w_preds_k, m_preds_k, P_preds_k = \
+            GaussianMixture.get_empty(N+L, self.model.x_dim).unpack()
 
         # Predict surviving states
         w_preds_k[L:] = \
-            self.model.survival_model.get_probability() * upds_k.w
-        m_preds_k[L:], P_preds_k[L:] = kalman_predict(self.model.motion_model.F,
-                                                      self.model.motion_model.Q,
-                                                      upds_k.m, upds_k.P)
+            self.model.survival_model.get_probability() * upds_k.gm.w
+        m_preds_k[L:], P_preds_k[L:] = \
+            KalmanFilter.predict(self.model.motion_model.F,
+                                 self.model.motion_model.Q,
+                                 upds_k.gm.m, upds_k.gm.P)
 
         # Predict born states
         w_preds_k[:L] = self.model.birth_model.ws
@@ -319,48 +321,42 @@ class CPHD_GMS_Filter:
                 self.model.birth_model.ws.sum(),
                 upds_k.c)
 
-        return KF_CPHD_Data(w_preds_k, m_preds_k, P_preds_k, c_preds_k)
+        gm_preds_k = GaussianMixture(w_preds_k, m_preds_k, P_preds_k)
+        return KF_CPHD_Data(gm_preds_k, c_preds_k)
 
     def gating(self, Z, preds_k):
-        return gate(Z,
-                    self.gamma,
-                    self.model.measurement_model.H,
-                    self.model.measurement_model.R,
-                    preds_k.m, preds_k.P)
+        return EllipsoidallGating.filter(Z,
+                                         self.gamma,
+                                         self.model.measurement_model.H,
+                                         self.model.measurement_model.R,
+                                         preds_k.gm.m, preds_k.gm.P)
 
-    def postprocess(self, w_upds_k, m_upds_k, P_upds_k):
-        w_upds_k, m_upds_k, P_upds_k = prune(
-            w_upds_k, m_upds_k, P_upds_k,
-            self.elim_threshold)
-
-        w_upds_k, m_upds_k, P_upds_k = merge_and_cap(
-            w_upds_k, m_upds_k, P_upds_k,
-            self.merge_threshold, self.L_max)
-
-        return w_upds_k, m_upds_k, P_upds_k
+    def postprocess(self, gm_ups_k):
+        gm_ups_k = gm_ups_k.prune(self.elim_threshold)
+        gm_ups_k = gm_ups_k.merge_and_cap(self.merge_threshold, self.L_max)
+        return gm_ups_k
 
     def update(self, Z, preds_k):
         # == Gating ==
         cand_Z = self.gating(Z, preds_k)
 
         # == Update ==
-        N1 = preds_k.w.shape[0]
+        N1 = preds_k.gm.w.shape[0]
         N2 = cand_Z.shape[0]
         M = N1 * (N2 + 1)
 
-        m_upds_k = np.empty((M, self.model.x_dim))
-        P_upds_k = np.empty((M, self.model.x_dim, self.model.x_dim))
-        w_upds_k = np.empty((M,))
+        w_upds_k, m_upds_k, P_upds_k = \
+            GaussianMixture.get_empty(M, self.model.x_dim).unpack()
 
         # Compute Kalman update
         if N2 > 0:
-            qs, ms, Ps = kalman_update(cand_Z,
-                                       self.model.measurement_model.H,
-                                       self.model.measurement_model.R,
-                                       preds_k.m, preds_k.P)
+            qs, ms, Ps = KalmanFilter.update(cand_Z,
+                                             self.model.measurement_model.H,
+                                             self.model.measurement_model.R,
+                                             preds_k.gm.m, preds_k.gm.P)
 
         # Compute symmetric functions
-        XI_vals = (qs.T @ preds_k.w) * \
+        XI_vals = (qs.T @ preds_k.gm.w) * \
             self.model.detection_model.get_probability() / self.model.clutter_model.pdf_c
 
         esfvals_E = esf(XI_vals)
@@ -379,17 +375,18 @@ class CPHD_GMS_Filter:
             compute_upsilons(self.N_max, N2,
                              self.model.clutter_model.lambda_c,
                              self.model.detection_model.get_probability(),
-                             preds_k.w, esfvals_E, esfvals_D)
+                             preds_k.gm.w, esfvals_E, esfvals_D)
 
         # Miss detection
-        w_upds_k[:N1] = preds_k.w \
+        w_upds_k[:N1] = preds_k.gm.w \
             * (1 - self.model.detection_model.get_probability()) \
             * (upsilon1_E @ preds_k.c) / (upsilon0_E @ preds_k.c)
-        m_upds_k[:N1] = preds_k.m.copy()
-        P_upds_k[:N1] = preds_k.P.copy()
+        m_upds_k[:N1] = preds_k.gm.m.copy()
+        P_upds_k[:N1] = preds_k.gm.P.copy()
 
+        # Detection
         if N2 > 0:
-            w = (qs * preds_k.w[:, np.newaxis]) \
+            w = (qs * preds_k.gm.w[:, np.newaxis]) \
                 * self.model.detection_model.get_probability() \
                 * (upsilon1_D.T @ preds_k.c) / (upsilon0_E @ preds_k.c) / \
                 self.model.clutter_model.pdf_c
@@ -403,18 +400,15 @@ class CPHD_GMS_Filter:
         c_upds_k = c_upds_k / c_upds_k.sum()
 
         # == Post-processing ==
-        w_upds_k, m_upds_k, P_upds_k = \
-            self.postprocess(w_upds_k, m_upds_k, P_upds_k)
+        gm_upds_k = GaussianMixture(w_upds_k, m_upds_k, P_upds_k)
+        gm_upds_k = self.postprocess(gm_upds_k)
 
-        return KF_CPHD_Data(w_upds_k, m_upds_k, P_upds_k, c_upds_k)
+        return KF_CPHD_Data(gm_upds_k, c_upds_k)
 
     def estimate(self, upds_k):
         cnt = np.argmax(upds_k.c)
-        indices = upds_k.w.argsort()[::-1][:cnt]
-        w_ests_k = upds_k.w[indices]
-        m_ests_k = upds_k.m[indices]
-        P_ests_k = upds_k.P[indices]
-        return KF_CPHD_Data(w_ests_k, m_ests_k, P_ests_k, upds_k.c)
+        gm_ests_k = upds_k.gm.cap(cnt)
+        return KF_CPHD_Data(gm_ests_k, upds_k.c)
 
     def step(self, Z, upds_k):
         # == Predict ==
@@ -436,6 +430,6 @@ class CPHD_GMS_Filter:
             ests_k = self.estimate(upds_k)
             ests.append(ests_k)
 
-        return [est.w for est in ests],\
-            [est.m for est in ests],\
-            [est.P for est in ests]
+        return [est.gm.w for est in ests],\
+            [est.gm.m for est in ests],\
+            [est.gm.P for est in ests]
