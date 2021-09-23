@@ -29,16 +29,23 @@ class MultiBernoulliGaussianBirthModel:
     def generate_birth_samples(self, N):
         return self.gm.sample(N)
 
+    def get_birth_sites(self):
+        return self.gm.w, self.gm.m, self.gm.P
+
+    def get_expected_birth_cnt(self):
+        return self.gm.w.sum()
+
 
 class MultiBernoulliMixtureGaussianBirthModel:
     def __init__(self):
         self.N = 0
-        self.Ls = np.empty(0).astype(int)
+        self.Ls = np.empty(0).astype(np.int32)
         self.rs = np.empty(0)
         self.gms = []
 
     def add(self, r, ws, ms, Ps):
         assert len(ws) > 0
+        assert sum(ws) == 1
 
         self.Ls = np.append(self.Ls, len(ws))
         self.rs = np.append(self.rs, r)
@@ -59,3 +66,16 @@ class MultiBernoulliMixtureGaussianBirthModel:
         m = np.array(m)
         P = np.array(P)
         self.gms[i] = self.gms[i].add(w, m, P)
+
+    def get_birth_sites(self):
+        w, m, P = zip(*[gm.unpack() for gm in self.gms])
+        w = np.hstack(w)
+        m = np.vstack(m)
+        P = np.vstack(P)
+
+        w = w * self.rs.repeat(self.Ls, axis=0)
+
+        return w, m, P
+
+    def get_expected_birth_cnt(self):
+        return self.rs.sum()
