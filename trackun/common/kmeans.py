@@ -31,4 +31,33 @@ def kmeans(w, X, niters):
         # Set assigned points to true
         free[I_idx_tmp] = False
 
+    x_c = np.array(x_c)
+    L = x_c.shape[0]
+
+    t = x_c.copy()
+    for _ in range(niters):
+        I_idx = [[] for _ in range(L)]
+        w_acc = np.zeros(L)
+        for i in range(Nx):
+            d = np.sum((X[i] - x_c) ** 2, -1)
+            idx = d.argsort()
+
+            k = 0
+            while w_acc[idx[k]] + w[i] > 1:
+                k += 1
+                if k >= L:
+                    print('[WARNING] Increase number of clusters')
+                    L += 1
+                    x_c = np.vstack([x_c, X[i]])
+                    idx[k] = L-1
+                    w_acc = np.append(w_acc, 0)
+                    I_idx.append([])
+                    break
+            w_acc[idx[k]] = w_acc[idx[k]] + w[i]
+            I_idx[idx[k]].append(i)
+        for el in range(L):
+            x_c[el] = X[I_idx[el]].T @ w[I_idx[el]] / w[I_idx[el]].sum()
+    print(t - x_c)
+    input()
+
     return x_c, I_idx
