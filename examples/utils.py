@@ -1,6 +1,7 @@
-
 from examples.toy_models import *
 from trackun.filters import *
+
+import os
 
 
 def gen_model(track_single, model_id):

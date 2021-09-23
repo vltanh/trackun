@@ -9,18 +9,18 @@ import numpy as np
 from scipy.stats.distributions import chi2
 
 __all__ = [
-    'KF_Bernoulli_Data',
-    'Bernoulli_GMS_Filter',
+    'KF_SingleTarget_Data',
+    'SingleTarget_GMS_Filter',
 ]
 
 
 @dataclass
-class KF_Bernoulli_Data:
+class KF_SingleTarget_Data:
     r: float
     gm: GaussianMixture
 
 
-class Bernoulli_GMS_Filter(GMSFilter):
+class SingleTarget_GMS_Filter(GMSFilter):
     def __init__(self, model,
                  L_max=100,
                  elim_thres=1e-5,
@@ -37,43 +37,22 @@ class Bernoulli_GMS_Filter(GMSFilter):
         self.gamma = chi2.ppf(pG, self.model.z_dim)
 
     def init(self):
-        r_upds_k = 0.
         w_upds_k = np.array([1.])
         m_upds_k = np.zeros((1, self.model.x_dim))
         P_upds_k = np.eye(self.model.x_dim)[np.newaxis, :]
 
         gm_upds_k = GaussianMixture(w_upds_k, m_upds_k, P_upds_k)
-        return KF_Bernoulli_Data(r_upds_k, gm_upds_k)
+        return KF_SingleTarget_Data(gm_upds_k)
 
     def predict(self, upds_k):
-        r_preds_k = (1 - upds_k.r) * self.model.birth_model.rs \
-            + upds_k.r * self.model.survival_model.get_probability()
-
-        N = upds_k.gm.w.shape[0]
-        L = self.model.birth_model.Ls[0]
-
-        w_preds_k, m_preds_k, P_preds_k = \
-            GaussianMixture.get_empty(N+L, self.model.x_dim).unpack()
-
-        # Predict surviving states
-        w_preds_k[L:] = upds_k.gm.w * upds_k.r \
-            * self.model.survival_model.get_probability()
-        m_preds_k[L:], P_preds_k[L:] = \
+        w_preds_k = upds_k.gm.w.copy()
+        m_preds_k, P_preds_k = \
             KalmanFilter.predict(self.model.motion_model.F,
                                  self.model.motion_model.Q,
                                  upds_k.gm.m, upds_k.gm.P)
 
-        # Predict born states
-        w_preds_k[:L] = self.model.birth_model.gms[0].w \
-            * self.model.birth_model.rs * (1 - upds_k.r)
-        m_preds_k[:L] = self.model.birth_model.gms[0].m
-        P_preds_k[:L] = self.model.birth_model.gms[0].P
-
-        # Normalize prediction
-        w_preds_k = w_preds_k / w_preds_k.sum()
-
         gm_preds_k = GaussianMixture(w_preds_k, m_preds_k, P_preds_k)
-        return KF_Bernoulli_Data(r_preds_k, gm_preds_k)
+        return KF_SingleTarget_Data(gm_preds_k)
 
     def gating(self, Z, preds_k):
         return EllipsoidallGating.filter(Z,
@@ -119,28 +98,18 @@ class Bernoulli_GMS_Filter(GMSFilter):
             gm_upds_k.m[N1:] = ms.transpose(1, 0, 2).reshape(N1 * N2, -1)
             gm_upds_k.P[N1:] = np.tile(Ps, (N2, 1, 1))
 
-        w_ups_k_sum = gm_upds_k.w.sum()
-        r_upds_k = preds_k.r * w_ups_k_sum / (
-            (1 - preds_k.r)
-            * self.model.clutter_model.rate_c
-            + preds_k.r * w_ups_k_sum
-        )
-        gm_upds_k.w = gm_upds_k.w / w_ups_k_sum
+        gm_upds_k.w = gm_upds_k.w / gm_upds_k.w.sum()
 
         # == Post-processing ==
         gm_upds_k = self.postprocess(gm_upds_k)
 
-        return KF_Bernoulli_Data(r_upds_k, gm_upds_k)
+        return KF_SingleTarget_Data(gm_upds_k)
 
     def visualizable_estimate(self, upds_k):
-        idx = [] \
-            if upds_k.r <= 0.5 or len(upds_k.gm.w) == 0 \
-            else [np.argmax(upds_k.gm.w)]
+        idx = np.argmax(upds_k.gm.w)
         gm_ests_k = upds_k.gm.select(idx)
-        return KF_Bernoulli_Data(upds_k.r, gm_ests_k)
+        return KF_SingleTarget_Data(upds_k.r, gm_ests_k)
 
     def estimate(self, upds_k):
-        idx = [] \
-            if upds_k.r <= 0.5 and len(upds_k.gm.w) == 0 \
-            else [np.argmax(upds_k.gm.w)]
+        idx = np.argmax(upds_k.gm.w)
         return upds_k.gm.select(idx).m

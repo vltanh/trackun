@@ -295,29 +295,27 @@ class CPHD_GMS_Filter(GMSFilter):
         return KF_CPHD_Data(gm, c)
 
     def predict(self, upds_k):
-        N = upds_k.gm.w.shape[0]
-        L = self.model.birth_model.N
-
-        gm_preds_k = GaussianMixture.get_empty(N+L, self.model.x_dim)
-
-        # Predict surviving states
-        gm_preds_k.w[L:] = \
-            self.model.survival_model.get_probability() * upds_k.gm.w
-        gm_preds_k.m[L:], gm_preds_k.P[L:] = \
-            KalmanFilter.predict(self.model.motion_model.F,
-                                 self.model.motion_model.Q,
-                                 upds_k.gm.m, upds_k.gm.P)
-
         # Predict born states
-        gm_preds_k.w[:L], gm_preds_k.m[:L], gm_preds_k.P[:L] = \
-            self.model.birth_model.gm.unpack()
+        w_bir, m_bir, P_bir = \
+            self.model.birth_model.get_birth_sites()
+
+        # Predict surviving state
+        w_sur = self.model.survival_model.get_probability() * upds_k.gm.w
+        m_sur, P_sur = KalmanFilter.predict(self.model.motion_model.F,
+                                            self.model.motion_model.Q,
+                                            upds_k.gm.m, upds_k.gm.P)
+
+        w_preds_k = np.hstack([w_bir, w_sur])
+        m_preds_k = np.vstack([m_bir, m_sur])
+        P_preds_k = np.vstack([P_bir, P_sur])
+        gm_preds_k = GaussianMixture(w_preds_k, m_preds_k, P_preds_k)
 
         # Predict cardinality
         c_preds_k = \
             predict_cardinality(
                 self.N_max,
                 self.model.survival_model.get_probability(),
-                self.model.birth_model.gm.w.sum(),
+                self.model.birth_model.get_expected_birth_cnt(),
                 upds_k.c)
 
         return KF_CPHD_Data(gm_preds_k, c_preds_k)
@@ -401,29 +399,11 @@ class CPHD_GMS_Filter(GMSFilter):
 
         return KF_CPHD_Data(gm_upds_k, c_upds_k)
 
-    def estimate(self, upds_k):
+    def visualizable_estimate(self, upds_k):
         cnt = np.argmax(upds_k.c)
         gm_ests_k = upds_k.gm.cap(cnt)
         return KF_CPHD_Data(gm_ests_k, upds_k.c)
 
-    def step(self, Z, upds_k):
-        # == Predict ==
-        preds_k = self.predict(upds_k)
-
-        # == Update ==
-        upds_k = self.update(Z, preds_k)
-
-        return upds_k
-
-    def run(self, Zs):
-        # Initialize
-        upds_k = self.init()
-
-        # Recursive loop
-        ests = []
-        for Z in Zs:
-            upds_k = self.step(Z, upds_k)
-            ests_k = self.estimate(upds_k)
-            ests.append(ests_k)
-
-        return ests
+    def estimate(self, upds_k):
+        cnt = np.argmax(upds_k.c)
+        return upds_k.gm.cap(cnt).m

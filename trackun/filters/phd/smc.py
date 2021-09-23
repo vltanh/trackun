@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import List
 
 from trackun.filters.base import SMCFilter
 from trackun.common.kmeans import *
@@ -12,6 +13,14 @@ __all__ = ['PHD_SMC_Filter']
 class PF_PHD_Data:
     w: np.ndarray
     x: np.ndarray
+
+
+@dataclass
+class PF_PHD_FullEstimation:
+    particles_w: np.ndarray
+    particles_x: np.ndarray
+    centroids_x: np.ndarray
+    centroids_I: List[List[int]]
 
 
 class PHD_SMC_Filter(SMCFilter):
@@ -67,14 +76,25 @@ class PHD_SMC_Filter(SMCFilter):
 
         return PF_PHD_Data(w_upds_k, x_upds_k)
 
+    def visualizable_estimate(self, upds_k):
+        x_ests_k = [np.empty((0, self.model.x_dim))]
+        I_ests_k = []
+        if upds_k.w.sum() > 0.5:
+            x_c, I_c = kmeans(upds_k.w, upds_k.x, 1)
+            for j in range(len(x_c)):
+                if upds_k.w[I_c[j]].sum() > 0.5:
+                    x_ests_k.append(x_c[j])
+                    I_ests_k.append(I_c[j])
+        x_ests_k = np.vstack(x_ests_k)
+        return PF_PHD_FullEstimation(upds_k.w, upds_k.x,
+                                     x_ests_k, I_ests_k)
+
     def estimate(self, upds_k):
         x_ests_k = [np.empty((0, self.model.x_dim))]
         if upds_k.w.sum() > 0.5:
-            x_c, I_c = kmeans(upds_k.w, upds_k.x, 0)
-
+            x_c, I_c = kmeans(upds_k.w, upds_k.x, 1)
             for j in range(len(x_c)):
                 if upds_k.w[I_c[j]].sum() > 0.5:
                     x_ests_k.append(x_c[j])
         x_ests_k = np.vstack(x_ests_k)
-
-        return PF_PHD_Data(upds_k.w, x_ests_k)
+        return x_ests_k

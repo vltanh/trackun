@@ -1,7 +1,7 @@
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 
 
-class BayesFilter(ABC):
+class BayesFilter:
     @abstractmethod
     def init(self):
         pass
@@ -36,6 +36,19 @@ class BayesFilter(ABC):
         for Z in Zs:
             upds_k = self.step(Z, upds_k)
             ests_k = self.estimate(upds_k)
+            ests.append(ests_k)
+
+        return ests
+
+    def visualizable_run(self, Zs):
+        # Initialize
+        upds_k = self.init()
+
+        # Recursive loop
+        ests = []
+        for Z in Zs:
+            upds_k = self.step(Z, upds_k)
+            ests_k = self.visualizable_estimate(upds_k)
             ests.append(ests_k)
 
         return ests

@@ -29,6 +29,35 @@ class Truth:
                 self.X[k] = np.empty((0, model.x_dim))
             self.track_list[k] = np.array(self.track_list[k])
 
+    def gen_trajectory(self, k):
+        xys = []
+        for track_idx in range(self.total_tracks):
+            x_p = [x[self.track_list[t] == track_idx, 0]
+                   for t, x in enumerate(self.X) if t <= k]
+            y_p = [x[self.track_list[t] == track_idx, 2]
+                   for t, x in enumerate(self.X) if t <= k]
+
+            x_p = [x[0] for x in x_p if len(x) > 0]
+            y_p = [y[0] for y in y_p if len(y) > 0]
+
+            xys.append(x_p)
+            xys.append(y_p)
+        return xys
+
+    def visualize(self, k, ax):
+        xys = self.gen_trajectory(k)
+
+        cfg = {
+            'c': 'blue',
+            'alpha': 0.5,
+            'marker': '.',
+            'markersize': 3,
+        }
+        ax.plot(*xys[:-2], **cfg,)
+        if len(xys) >= 2:
+            ax.plot(xys[-2], xys[-1], **cfg,
+                    label='True trajectory')
+
 
 class Observation:
     def __init__(self, model, truth) -> None:
@@ -62,3 +91,15 @@ class Observation:
                 self.Z[k] = np.empty((0, model.z_dim))
             self.is_clutter[k] = np.zeros(len(self.Z[k]), dtype=np.bool8)
             self.is_clutter[k][-len(C):] = True
+
+    def visualize(self, k, ax, is_clutter=None):
+        X, Y = self.get_obs(k)
+
+        ax.scatter(X, Y,
+                   c='black', alpha=0.3,
+                   label='Detection')
+
+        if is_clutter is not None:
+            ax.scatter(X[is_clutter], Y[is_clutter],
+                       c='red', alpha=0.3,
+                       label='Clutter')

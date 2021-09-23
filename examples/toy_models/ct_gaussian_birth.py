@@ -4,6 +4,7 @@ from trackun.models.clutter import UniformClutterModel
 from trackun.models.birth import MultiBernoulliGaussianBirthModel
 from trackun.models.survival import ConstantSurvivalModel
 from trackun.models.detection import BearingGaussianDetectionModel
+from trackun.metrics.ospa import OSPA
 from examples.generate_data import Observation, Truth
 
 import numpy as np
@@ -11,6 +12,36 @@ import numpy as np
 __all__ = [
     'CTGaussianWithBirthModel',
 ]
+
+
+class CTGaussianWithBirthObservation(Observation):
+    def get_obs(self, k):
+        Zs = self.Z[k]
+        X = Zs[:, 1] * np.sin(Zs[:, 0])
+        Y = Zs[:, 1] * np.cos(Zs[:, 0])
+        return X, Y
+
+
+class CTGaussianWithBirthEstimation:
+    def __init__(self, est):
+        self.particles_w = est.particles_w
+        self.particles_x = est.particles_x
+        self.centroids_x = est.centroids_x
+        self.centroids_I = est.centroids_I
+
+    def visualize(self, ax, color, label):
+        ax.scatter(self.particles_x[:, 0], self.particles_x[:, 2],
+                   color=color, alpha=0.3)
+        ax.scatter(self.centroids_x[:, 0], self.centroids_x[:, 2],
+                   color=color, linewidth=2, edgecolor='black',
+                   label=label)
+
+    def ospa(self, gt):
+        ospa = OSPA()
+        return ospa(gt, self.centroids_x)
+
+    def count(self):
+        return len(self.centroids_x)
 
 
 class CTGaussianWithBirthModel:
@@ -46,8 +77,7 @@ class CTGaussianWithBirthModel:
         # Detection model
         m = np.zeros(2)
         P = np.diag([2000., 2000.]) ** 2
-        self.detection_model = \
-            BearingGaussianDetectionModel(0.98, m, P)
+        self.detection_model = BearingGaussianDetectionModel(0.98, m, P)
 
         # Clutter model
         range_c = np.array([
@@ -85,9 +115,16 @@ class CTGaussianWithBirthModel:
             100, 100, 80,
             100, 100,
         ])
+
         truth = Truth(100)
         truth.generate(self, xstart, tbirth, tdeath)
         return truth
 
     def gen_obs(self, truth):
-        return Observation(self, truth)
+        return CTGaussianWithBirthObservation(self, truth)
+
+    def gen_vis_obj(self, est):
+        return CTGaussianWithBirthEstimation(est)
+
+    def get_vis_lim(self):
+        return (-2000, 2000), (-2000, 2000)

@@ -48,7 +48,7 @@ class BearingGaussianMeasurementModel:
                 meas_likelihood = np.exp(
                     - e_sq / 2.
                     - np.log(2 * np.pi)
-                    + log_detD
+                    - log_detD
                 )
 
                 pseudo_likelihood = pseudo_likelihood + PD_vals * meas_likelihood / \
