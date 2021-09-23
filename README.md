@@ -11,7 +11,7 @@ python demo.py -s -m linear_gaussian -f GM-Bernoulli -o vis/output
 ```
 
 <details>
-  <summary>Expand</summary>
+  <summary>Click to expand</summary>
 
 ![Examples of GM-Bernoulli filter](images/gm-bernoulli.gif)
 
@@ -20,25 +20,25 @@ python demo.py -s -m linear_gaussian -f GM-Bernoulli -o vis/output
 **Example 2**: GM-PHD and GM-CPHD filter for multi-object tracking on Constant Velocity with Gaussian noise model
 
 ```bash
-python demo.py -m linear_gaussian -f GM-CPHD GM-PHD -o vis/output
+python demo.py -m linear_gaussian -f GM-PHD GM-CPHD -o vis/output
 ```
 
 <details>
-  <summary>Expand</summary>
+  <summary>Click to expand</summary>
 
-![Examples of GM-PHD and GM-CPHD filter](images/gm-cphd-phd.gif)
+![Examples of GM-PHD and GM-CPHD filter](images/gm-phd-cphd.gif)
 
 </details>
 
 ## **Checklist**
 
 <details>
-  <summary>Click to expand!</summary>
+  <summary>Click to expand</summary>
 
-### Filters
+### **Filters**
 
 <details>
-  <summary>Click to expand!</summary>
+  <summary>Click to expand</summary>
 
 - [ ] Single Object
   - [ ] Kalman Filter (GMS)
@@ -97,22 +97,21 @@ python demo.py -m linear_gaussian -f GM-CPHD GM-PHD -o vis/output
 ### **Models**
 
 <details>
-  <summary>Click to expand!</summary>
+  <summary>Click to expand</summary>
 
 #### Motion model
 
-- [ ] Linear
+- [ ] Linear Gaussian
   - [x] Constant velocity
-- [ ] Non-Linear
-  - [ ] Coordinated turn (CT)
-- [ ] General (?)
+- [ ] Non-Linear Gaussian
+  - [x] Coordinated turn (CT)
 
 #### Measurement model
 
-- [x] Linear
-- [ ] Non-Linear/Gen
-  - [ ] Bearing
-- [ ] General (?)
+- [ ] Linear Gaussian
+  - [x] Cartesian coordinate
+- [ ] Non-Linear
+  - [x] Bearing/Polar coordinate
 
 #### Other models
 
@@ -120,20 +119,21 @@ python demo.py -m linear_gaussian -f GM-CPHD GM-PHD -o vis/output
   - [x] Multi-Bernoulli Gaussian
   - [x] Multi-Bernoulli Gaussian Mixture
 - [ ] Detection model
-  - [x] Constant detection probability
+  - [x] Constant probability
+  - [x] Bearing Gaussian
 - [ ] Survival model
-  - [x] Constant survival probability
+  - [x] Constant probability
 - [ ] Clutter model
   - [x] Uniform clutter
   
 </details>
 
-### Metrics
+### **Metrics**
 
 - [x] OSPA
 - [ ] OSPA2
 
-### Utility
+### **Utility**
 
 - [ ] Examples and Visualization
 - [ ] Benchmarking
