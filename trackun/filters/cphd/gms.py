@@ -284,7 +284,7 @@ class CPHD_GMS_Filter(GMSFilter):
         self.gamma = chi2.ppf(pG, self.model.z_dim)
 
     def init(self):
-        w = np.array([1.])
+        w = np.array([0.])
         m = np.zeros((1, self.model.x_dim))
         P = np.eye(self.model.x_dim)[np.newaxis, :]
 
@@ -334,7 +334,9 @@ class CPHD_GMS_Filter(GMSFilter):
 
     def update(self, Z, preds_k):
         # == Gating ==
-        cand_Z = self.gating(Z, preds_k)
+        cand_Z = self.gating(Z, preds_k) \
+            if self.use_gating \
+            else Z
 
         # == Update ==
         N1 = preds_k.gm.w.shape[0]
@@ -350,37 +352,36 @@ class CPHD_GMS_Filter(GMSFilter):
                                              self.model.measurement_model.R,
                                              preds_k.gm.m, preds_k.gm.P)
 
-        # Compute symmetric functions
-        XI_vals = (qs.T @ preds_k.gm.w) * \
-            self.model.detection_model.get_probability() / self.model.clutter_model.pdf_c
+            # Compute symmetric functions
+            XI_vals = (qs.T @ preds_k.gm.w) * \
+                self.model.detection_model.get_probability() / self.model.clutter_model.pdf_c
 
-        esfvals_E = esf(XI_vals)
-        esfvals_D = np.zeros((N2, N2))
-        mask = ~np.eye(N2, dtype=np.bool8)
-        # for i in range(N2):
-        #     esfvals_D[:, i] = esf(XI_vals[mask[i]])
-        esfvals_D = esf_batch(
-            XI_vals.reshape(1, -1)
-            .repeat(N2, axis=0)[mask]
-            .reshape(N2, N2 - 1)
-        ).T
+            esfvals_E = esf(XI_vals)
+            esfvals_D = np.zeros((N2, N2))
+            mask = ~np.eye(N2, dtype=np.bool8)
+            # for i in range(N2):
+            #     esfvals_D[:, i] = esf(XI_vals[mask[i]])
+            esfvals_D = esf_batch(
+                XI_vals.reshape(1, -1)
+                .repeat(N2, axis=0)[mask]
+                .reshape(N2, N2 - 1)
+            ).T
 
-        # Compute upsilons
-        upsilon0_E, upsilon1_E, upsilon1_D = \
-            compute_upsilons(self.N_max, N2,
-                             self.model.clutter_model.lambda_c,
-                             self.model.detection_model.get_probability(),
-                             preds_k.gm.w, esfvals_E, esfvals_D)
+            # Compute upsilons
+            upsilon0_E, upsilon1_E, upsilon1_D = \
+                compute_upsilons(self.N_max, N2,
+                                 self.model.clutter_model.lambda_c,
+                                 self.model.detection_model.get_probability(),
+                                 preds_k.gm.w, esfvals_E, esfvals_D)
 
-        # Miss detection
-        gm_upds_k.w[:N1] = preds_k.gm.w \
-            * (1 - self.model.detection_model.get_probability()) \
-            * (upsilon1_E @ preds_k.c) / (upsilon0_E @ preds_k.c)
-        gm_upds_k.m[:N1] = preds_k.gm.m.copy()
-        gm_upds_k.P[:N1] = preds_k.gm.P.copy()
+            # Miss detection
+            gm_upds_k.w[:N1] = preds_k.gm.w \
+                * (1 - self.model.detection_model.get_probability()) \
+                * (upsilon1_E @ preds_k.c) / (upsilon0_E @ preds_k.c)
+            gm_upds_k.m[:N1] = preds_k.gm.m.copy()
+            gm_upds_k.P[:N1] = preds_k.gm.P.copy()
 
-        # Detection
-        if N2 > 0:
+            # Detection
             w = (qs * preds_k.gm.w[:, np.newaxis]) \
                 * self.model.detection_model.get_probability() \
                 * (upsilon1_D.T @ preds_k.c) / (upsilon0_E @ preds_k.c) / \
@@ -390,9 +391,17 @@ class CPHD_GMS_Filter(GMSFilter):
             gm_upds_k.m[N1:] = ms.transpose(1, 0, 2).reshape(N1 * N2, -1)
             gm_upds_k.P[N1:] = np.tile(Ps, (N2, 1, 1))
 
-        # Update cardinality
-        c_upds_k = upsilon0_E * preds_k.c
-        c_upds_k = c_upds_k / c_upds_k.sum()
+            # Update cardinality
+            c_upds_k = upsilon0_E * preds_k.c
+            c_upds_k = c_upds_k / c_upds_k.sum()
+        else:
+            gm_upds_k.w[:N1] = preds_k.gm.w \
+                * (1 - self.model.detection_model.get_probability())
+            gm_upds_k.m[:N1] = preds_k.gm.m.copy()
+            gm_upds_k.P[:N1] = preds_k.gm.P.copy()
+
+            c_upds_k = np.ones(1 + self.N_max)
+            c_upds_k = c_upds_k / c_upds_k.sum()
 
         # == Post-processing ==
         gm_upds_k = self.postprocess(gm_upds_k)
