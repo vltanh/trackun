@@ -1,7 +1,7 @@
 from trackun.models.motion import ConstantVelocityGaussianMotionModel
 from trackun.models.measurement import ConstantVelocityGaussianMeasurementModel
 from trackun.models.clutter import UniformClutterModel
-from trackun.models.birth import MultiBernoulliGaussianBirthModel
+from trackun.models.birth import MultiBernoulliGaussianBirthModel, MultiBernoulliMixtureGaussianBirthModel
 from trackun.models.survival import ConstantSurvivalModel
 from trackun.models.detection import ConstantDetectionModel
 from trackun.metrics.ospa import OSPA
@@ -60,12 +60,30 @@ class LinearGaussianWithBirthModel:
         self.z_dim = self.measurement_model.z_dim
 
         # Birth model
-        self.birth_model = MultiBernoulliGaussianBirthModel()
-        P0 = np.diag([10., 10., 10., 10.]) ** 2
-        self.birth_model.add(w=.03, m=[0., 0., 0., 0.],       P=P0)
-        self.birth_model.add(w=.03, m=[400., 0., -600., 0.],  P=P0)
-        self.birth_model.add(w=.03, m=[-800., 0., -200., 0.], P=P0)
-        self.birth_model.add(w=.03, m=[-200., 0., 800., 0.],  P=P0)
+        # self.birth_model = MultiBernoulliGaussianBirthModel()
+        # P0 = np.diag([10., 10., 10., 10.]) ** 2
+        # self.birth_model.add(w=.03, m=[0., 0., 0., 0.],       P=P0)
+        # self.birth_model.add(w=.03, m=[400., 0., -600., 0.],  P=P0)
+        # self.birth_model.add(w=.03, m=[-800., 0., -200., 0.], P=P0)
+        # self.birth_model.add(w=.03, m=[-200., 0., 800., 0.],  P=P0)
+
+        self.birth_model = MultiBernoulliMixtureGaussianBirthModel()
+        self.birth_model.add(r=.03,
+                             ws=[1.],
+                             ms=[[0., 0., 0., 0.]],
+                             Ps=[np.diag([10., 10., 10., 10.]) ** 2])
+        self.birth_model.add(r=.03,
+                             ws=[1.],
+                             ms=[[400., 0., -600., 0.]],
+                             Ps=[np.diag([10., 10., 10., 10.]) ** 2])
+        self.birth_model.add(r=.03,
+                             ws=[1.],
+                             ms=[[-800., 0., -200., 0.]],
+                             Ps=[np.diag([10., 10., 10., 10.]) ** 2])
+        self.birth_model.add(r=.03,
+                             ws=[1.],
+                             ms=[[-200., 0., 800., 0.]],
+                             Ps=[np.diag([10., 10., 10., 10.]) ** 2])
 
         # Survival model
         self.survival_model = ConstantSurvivalModel(.99)
@@ -78,7 +96,7 @@ class LinearGaussianWithBirthModel:
             [-1000, 1000],
             [-1000, 1000]
         ])
-        self.clutter_model = UniformClutterModel(60, range_c)
+        self.clutter_model = UniformClutterModel(30, range_c)
 
     def gen_truth(self):
         xstart = np.array([

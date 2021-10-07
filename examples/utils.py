@@ -1,8 +1,6 @@
 from examples.toy_models import *
 from trackun.filters import *
 
-import os
-
 
 def gen_model(track_single, model_id):
     if not track_single:
@@ -29,6 +27,8 @@ def gen_filter(filter_id, model):
         filt = Bernoulli_GMS_Filter(model)
     elif filter_id == 'SMC-PHD':
         filt = PHD_SMC_Filter(model)
+    elif filter_id == 'GM-GLMB':
+        filt = GLMB_GMS_Filter(model)
     else:
         raise Exception('Unknown filter name.')
     return filt

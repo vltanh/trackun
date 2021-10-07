@@ -7,7 +7,6 @@ class Truth:
         self.K = K
         self.X = [[] for _ in range(K)]
         self.N = np.zeros(K).astype(int)
-        self.L = [[] for _ in range(K)]
 
         self.track_list = [[] for _ in range(K)]
         self.total_tracks = 0

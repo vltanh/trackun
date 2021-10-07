@@ -40,7 +40,7 @@ def draw_ellipse(position, covariance, ax=None, **kwargs):
                          angle, **kwargs))
 
 
-def plot_2d_gaussian_mixture(gm, ax, color, linestyle, label):
+def plot_2d_gaussian_mixture(gm, ax, color, linestyle, label=None):
     ax.scatter(gm.m[:, 0], gm.m[:, 2],
                c=color, s=10,
                label=label)
@@ -52,10 +52,14 @@ def plot_2d_gaussian_mixture(gm, ax, color, linestyle, label):
 def visualize_model(model, ax):
     if isinstance(model.birth_model, MultiBernoulliMixtureGaussianBirthModel):
         birth_model = model.birth_model
-        for gm in birth_model.gms:
-            plot_2d_gaussian_mixture(gm, ax,
+        if len(birth_model.gms):
+            plot_2d_gaussian_mixture(birth_model.gms[0], ax,
                                      color='orange', linestyle='dashed',
                                      label='Birth site')
+        if len(birth_model.gms) > 1:
+            for gm in birth_model.gms[1:]:
+                plot_2d_gaussian_mixture(gm, ax,
+                                         color='orange', linestyle='dashed')
 
     if isinstance(model.birth_model, MultiBernoulliGaussianBirthModel):
         birth_model = model.birth_model
