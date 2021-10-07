@@ -41,6 +41,16 @@ class GaussianMixture:
                               size=mask.sum())
         return X
 
+    def copy(self):
+        return GaussianMixture(self.w.copy(), self.m.copy(), self.P.copy())
+
+    def __repr__(self) -> str:
+        return f'''
+            w = {self.w},
+            m = {self.m},
+            P = {self.P}
+        '''
+
     def prune(self, thres):
         return self.select(self.w > thres)
 
