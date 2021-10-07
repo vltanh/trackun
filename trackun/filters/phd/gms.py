@@ -6,16 +6,15 @@ from trackun.common.kalman_filter import KalmanFilter
 from trackun.common.gating import EllipsoidallGating
 
 import numpy as np
-from scipy.stats.distributions import chi2
 
 __all__ = [
-    'KF_PHD_Data',
+    'PHD_GMS_Data',
     'PHD_GMS_Filter',
 ]
 
 
 @dataclass
-class KF_PHD_Data:
+class PHD_GMS_Data:
     gm: GaussianMixture
 
 
@@ -27,14 +26,9 @@ class PHD_GMS_Filter(GMSFilter):
                  merge_threshold=4,
                  use_gating=True,
                  pG=0.999) -> None:
-        self.model = model
-
-        self.L_max = L_max
-        self.elim_threshold = elim_thres
-        self.merge_threshold = merge_threshold
-
-        self.use_gating = use_gating
-        self.gamma = chi2.ppf(pG, self.model.z_dim)
+        super().__init__(model,
+                         L_max, elim_thres, merge_threshold,
+                         use_gating, pG)
 
     def init(self):
         w = np.array([1.])
@@ -42,7 +36,7 @@ class PHD_GMS_Filter(GMSFilter):
         P = np.eye(self.model.x_dim)[np.newaxis, :]
 
         gm = GaussianMixture(w, m, P)
-        return KF_PHD_Data(gm)
+        return PHD_GMS_Data(gm)
 
     def predict(self, upds_k):
         # Predict born states
@@ -60,7 +54,7 @@ class PHD_GMS_Filter(GMSFilter):
         P_preds_k = np.vstack([P_bir, P_sur])
         gm_preds_k = GaussianMixture(w_preds_k, m_preds_k, P_preds_k)
 
-        return KF_PHD_Data(gm_preds_k)
+        return PHD_GMS_Data(gm_preds_k)
 
     def gating(self, Z, preds_k):
         return EllipsoidallGating.filter(Z,
@@ -114,7 +108,7 @@ class PHD_GMS_Filter(GMSFilter):
         # == Post-processing ==
         gm_upds_k = self.postprocess(gm_upds_k)
 
-        return KF_PHD_Data(gm_upds_k)
+        return PHD_GMS_Data(gm_upds_k)
 
     def visualizable_estimate(self, upds_k):
         cnt = upds_k.gm.w.round().astype(np.int32)
@@ -122,7 +116,7 @@ class PHD_GMS_Filter(GMSFilter):
         m_ests_k = upds_k.gm.m.repeat(cnt, axis=0)
         P_ests_k = upds_k.gm.P.repeat(cnt, axis=0)
         gm_ests_k = GaussianMixture(w_ests_k, m_ests_k, P_ests_k)
-        return KF_PHD_Data(gm_ests_k)
+        return PHD_GMS_Data(gm_ests_k)
 
     def estimate(self, upds_k):
         cnt = upds_k.gm.w.round().astype(np.int32)

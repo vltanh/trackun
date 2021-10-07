@@ -1,4 +1,5 @@
 from abc import abstractmethod
+from scipy.stats.distributions import chi2
 
 
 class BayesFilter:
@@ -55,7 +56,21 @@ class BayesFilter:
 
 
 class GMSFilter(BayesFilter):
-    pass
+    def __init__(self,
+                 model,
+                 L_max=100,
+                 elim_thres=1e-5,
+                 merge_threshold=4,
+                 use_gating=True,
+                 pG=0.999) -> None:
+        self.model = model
+
+        self.L_max = L_max
+        self.elim_threshold = elim_thres
+        self.merge_threshold = merge_threshold
+
+        self.use_gating = use_gating
+        self.gamma = chi2.ppf(pG, self.model.z_dim)
 
 
 class SMCFilter(BayesFilter):

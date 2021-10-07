@@ -6,17 +6,16 @@ from trackun.common.kalman_filter import KalmanFilter
 from trackun.common.gating import EllipsoidallGating
 
 import numpy as np
-from scipy.stats.distributions import chi2
 import numba
 
 __all__ = [
-    'KF_CPHD_Data',
+    'CPHD_GMS_Data',
     'CPHD_GMS_Filter',
 ]
 
 
 @dataclass
-class KF_CPHD_Data:
+class CPHD_GMS_Data:
     gm: GaussianMixture
     c: np.ndarray
 
@@ -266,22 +265,17 @@ def compute_upsilons(N_max, N2, lambda_c, P_D, w_preds_k, esfvals_E, esfvals_D):
 class CPHD_GMS_Filter(GMSFilter):
     def __init__(self,
                  model,
-                 N_max=20,
                  L_max=100,
                  elim_thres=1e-5,
                  merge_threshold=4,
                  use_gating=True,
-                 pG=0.999) -> None:
-        self.model = model
+                 pG=0.999,
+                 N_max=20) -> None:
+        super().__init__(model,
+                         L_max, elim_thres, merge_threshold,
+                         use_gating, pG)
 
         self.N_max = N_max
-
-        self.L_max = L_max
-        self.elim_threshold = elim_thres
-        self.merge_threshold = merge_threshold
-
-        self.use_gating = use_gating
-        self.gamma = chi2.ppf(pG, self.model.z_dim)
 
     def init(self):
         w = np.array([0.])
@@ -292,7 +286,7 @@ class CPHD_GMS_Filter(GMSFilter):
         c[0] = 1.
 
         gm = GaussianMixture(w, m, P)
-        return KF_CPHD_Data(gm, c)
+        return CPHD_GMS_Data(gm, c)
 
     def predict(self, upds_k):
         # Predict born states
@@ -318,7 +312,7 @@ class CPHD_GMS_Filter(GMSFilter):
                 self.model.birth_model.get_expected_birth_cnt(),
                 upds_k.c)
 
-        return KF_CPHD_Data(gm_preds_k, c_preds_k)
+        return CPHD_GMS_Data(gm_preds_k, c_preds_k)
 
     def gating(self, Z, preds_k):
         return EllipsoidallGating.filter(Z,
@@ -406,12 +400,12 @@ class CPHD_GMS_Filter(GMSFilter):
         # == Post-processing ==
         gm_upds_k = self.postprocess(gm_upds_k)
 
-        return KF_CPHD_Data(gm_upds_k, c_upds_k)
+        return CPHD_GMS_Data(gm_upds_k, c_upds_k)
 
     def visualizable_estimate(self, upds_k):
         cnt = np.argmax(upds_k.c)
         gm_ests_k = upds_k.gm.cap(cnt)
-        return KF_CPHD_Data(gm_ests_k, upds_k.c)
+        return CPHD_GMS_Data(gm_ests_k, upds_k.c)
 
     def estimate(self, upds_k):
         cnt = np.argmax(upds_k.c)

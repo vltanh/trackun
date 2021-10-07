@@ -6,35 +6,30 @@ from trackun.common.kalman_filter import KalmanFilter
 from trackun.common.gating import EllipsoidallGating
 
 import numpy as np
-from scipy.stats.distributions import chi2
 
 __all__ = [
-    'KF_Bernoulli_Data',
+    'Bernoulli_GMS_Data',
     'Bernoulli_GMS_Filter',
 ]
 
 
 @dataclass
-class KF_Bernoulli_Data:
+class Bernoulli_GMS_Data:
     r: float
     gm: GaussianMixture
 
 
 class Bernoulli_GMS_Filter(GMSFilter):
-    def __init__(self, model,
+    def __init__(self,
+                 model,
                  L_max=100,
                  elim_thres=1e-5,
                  merge_threshold=4,
                  use_gating=True,
                  pG=0.999) -> None:
-        self.model = model
-
-        self.L_max = L_max
-        self.elim_threshold = elim_thres
-        self.merge_threshold = merge_threshold
-
-        self.use_gating = use_gating
-        self.gamma = chi2.ppf(pG, self.model.z_dim)
+        super().__init__(model,
+                         L_max, elim_thres, merge_threshold,
+                         use_gating, pG)
 
     def init(self):
         r_upds_k = 0.
@@ -43,7 +38,7 @@ class Bernoulli_GMS_Filter(GMSFilter):
         P_upds_k = np.eye(self.model.x_dim)[np.newaxis, :]
 
         gm_upds_k = GaussianMixture(w_upds_k, m_upds_k, P_upds_k)
-        return KF_Bernoulli_Data(r_upds_k, gm_upds_k)
+        return Bernoulli_GMS_Data(r_upds_k, gm_upds_k)
 
     def predict(self, upds_k):
         r_preds_k = (1 - upds_k.r) * self.model.birth_model.rs \
@@ -73,7 +68,7 @@ class Bernoulli_GMS_Filter(GMSFilter):
         w_preds_k = w_preds_k / w_preds_k.sum()
 
         gm_preds_k = GaussianMixture(w_preds_k, m_preds_k, P_preds_k)
-        return KF_Bernoulli_Data(r_preds_k, gm_preds_k)
+        return Bernoulli_GMS_Data(r_preds_k, gm_preds_k)
 
     def gating(self, Z, preds_k):
         return EllipsoidallGating.filter(Z,
@@ -130,14 +125,14 @@ class Bernoulli_GMS_Filter(GMSFilter):
         # == Post-processing ==
         gm_upds_k = self.postprocess(gm_upds_k)
 
-        return KF_Bernoulli_Data(r_upds_k, gm_upds_k)
+        return Bernoulli_GMS_Data(r_upds_k, gm_upds_k)
 
     def visualizable_estimate(self, upds_k):
         idx = [] \
             if upds_k.r <= 0.5 or len(upds_k.gm.w) == 0 \
             else [np.argmax(upds_k.gm.w)]
         gm_ests_k = upds_k.gm.select(idx)
-        return KF_Bernoulli_Data(upds_k.r, gm_ests_k)
+        return Bernoulli_GMS_Data(upds_k.r, gm_ests_k)
 
     def estimate(self, upds_k):
         idx = [] \
