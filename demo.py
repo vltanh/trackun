@@ -1,3 +1,4 @@
+import pickle
 from examples.utils import gen_model, gen_filter
 from examples.visualize import visualize
 
@@ -17,7 +18,8 @@ parser.add_argument('-m', '--model',
                     help='motion/measurement model')
 parser.add_argument('-f', '--filters',
                     nargs='+',
-                    choices=['GM-Bernoulli', 'GM-PHD', 'GM-CPHD', 'SMC-PHD'],
+                    choices=['GM-Bernoulli', 'GM-PHD',
+                             'GM-CPHD', 'GM-GLMB', 'SMC-PHD'],
                     required=True,
                     help='filter names')
 parser.add_argument('-o', '--output',
@@ -43,6 +45,14 @@ filters = [
 print('Begin generating examples...')
 truth = model.gen_truth()
 obs = model.gen_obs(truth)
+
+d = pickle.load(open('tests/linear_multi/truth.pkl', 'rb'))
+truth.X = d['X']
+truth.track_list = d['track_list']
+
+d = pickle.load(open('tests/linear_multi/meas.pkl', 'rb'))
+obs.Z = d['Z']
+
 print('Generation done!')
 print('================')
 
