@@ -20,10 +20,12 @@ class GaussianMixture:
         return GaussianMixture(w, m, P)
 
     def select(self, indices):
-        return GaussianMixture(self.w[indices], self.m[indices], self.P[indices])
+        return GaussianMixture(self.w[indices].copy(),
+                               self.m[indices].copy(),
+                               self.P[indices].copy())
 
     def unpack(self):
-        return self.w, self.m, self.P
+        return self.w.copy(), self.m.copy(), self.P.copy()
 
     def add(self, w, m, P):
         ws = np.append(self.w, w)
@@ -42,7 +44,9 @@ class GaussianMixture:
         return X
 
     def copy(self):
-        return GaussianMixture(self.w.copy(), self.m.copy(), self.P.copy())
+        return GaussianMixture(self.w.copy(),
+                               self.m.copy(),
+                               self.P.copy())
 
     def __repr__(self) -> str:
         return f'''
