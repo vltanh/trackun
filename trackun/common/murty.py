@@ -15,7 +15,7 @@ def murty(P0, m):
     nrows, ncols = P0.shape
 
     if m == 1:
-        return S0, C0
+        return S0[np.newaxis], C0
 
     N = 1000
     answer_list_P = np.zeros((N, nrows, ncols))
@@ -137,4 +137,11 @@ def mbest_wrap(P, m):
 if __name__ == '__main__':
     P = np.random.random((3, 4))
     print(P)
-    print(mbest_wrap(P, 5))
+
+    assignments, costs = mbest_wrap(P, 5)
+    print(assignments)
+    print(costs)
+
+    assignments, costs = mbest_wrap(P, 1)
+    print(assignments)
+    print(costs)
