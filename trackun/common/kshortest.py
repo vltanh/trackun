@@ -1,13 +1,14 @@
 from dataclasses import dataclass
-from operator import sub
 from typing import List
 import numpy as np
 
 np.random.seed(3698)
+EPS = np.finfo(np.float64).eps
+INF = np.inf
 
 
 def find(G):
-    head, tail = np.where(G.T > 0)
+    head, tail = np.where(np.isfinite(G.T))
     w = G.T[head, tail]
     return tail, head, w
 
@@ -176,14 +177,14 @@ def kshortestwrap_pred(rs, k):
     _is = np.argsort(-rs)
     ds = rs[_is]
 
-    CM = np.zeros((ns, ns))
+    CM = np.full((ns, ns), INF)
     for i in range(ns):
         CM[:i, i] = ds[i]
 
-    CMPad = np.zeros((ns + 2, ns + 2))
+    CMPad = np.full((ns + 2, ns + 2), INF)
     CMPad[0, 1:-1] = ds
-    CMPad[0, -1] = 1e-300
-    CMPad[1:-1, -1] = 1e-300
+    CMPad[0, -1] = 0.
+    CMPad[1:-1, -1] = 0.
     CMPad[1:-1, 1:-1] = CM
 
     paths, costs = kShortestPath_any(CMPad, 0, ns + 1, k)
@@ -198,13 +199,11 @@ def kshortestwrap_pred(rs, k):
 
 
 if __name__ == '__main__':
-    rs = np.random.random(4)
-    rs = np.random.random(4)
+    rs = 2 * np.random.random(4) - 1
     print(rs)
-    paths, costs = kshortestwrap_pred(rs, 3)
+    paths, costs = kshortestwrap_pred(rs, 100)
     print(paths, costs)
 
-    INF = np.inf
     C = np.array([
         [INF, 3, 2, INF, INF, INF],
         [INF, INF, INF, 4, INF, INF],
