@@ -5,7 +5,7 @@ from scipy.stats.distributions import chi2
 class BayesFilter:
     @abstractmethod
     def init(self):
-        pass
+        self.k = 0
 
     @abstractmethod
     def predict(self, upds_k):
@@ -25,6 +25,8 @@ class BayesFilter:
 
         # == Update ==
         upds_k = self.update(Z, preds_k)
+
+        self.k += 1
 
         return upds_k
 
