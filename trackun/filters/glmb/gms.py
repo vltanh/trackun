@@ -74,22 +74,58 @@ def clean_predict(pred: GLMB_GMS_Data) -> GLMB_GMS_Data:
 def clean_update(upd: GLMB_GMS_Data) -> GLMB_GMS_Data:
     usedindicator = np.zeros(len(upd.track_table), dtype=np.int32)
     for hidx in range(len(upd.w)):
-        usedindicator[upd.I[hidx]] = [
-            x + 1 for x in usedindicator[upd.I[hidx]]]
+        usedindicator[upd.I[hidx]] += 1
     trackcount = np.sum(usedindicator > 0)
     # print(usedindicator, trackcount)
     # input()
 
     newindices = np.zeros(len(upd.track_table), dtype=np.ndarray)
-    newindices[usedindicator > 0] = np.arange(trackcount)
+    newindices[usedindicator > 0] = np.arange(1, trackcount + 1)
+    # print(newindices)
+    # input()
 
     tt_temp = [x for x, y in zip(upd.track_table, usedindicator) if y > 0]
     w_temp = upd.w.copy()
-    I_temp = [newindices[upd.I[hidx]].tolist() for hidx in range(len(upd.w))]
+    I_temp = [(newindices - 1)[upd.I[hidx]].copy().tolist()
+              for hidx in range(len(upd.w))]
+    # print(I_temp)
+    # input()
     n_temp = upd.n.copy()
     cdn_temp = upd.cdn.copy()
 
     return GLMB_GMS_Data(tt_temp, w_temp, I_temp, n_temp, cdn_temp)
+
+
+def select(upd, idxkeep):
+    tt_prune = [Track(x.gm.copy(), [x.l[0], x.l[1]], [xx for xx in x.ah])
+                for x in upd.track_table]
+    w_prune = upd.w[idxkeep].copy()
+    I_prune = [upd.I[x] for x in idxkeep]
+    n_prune = upd.n[idxkeep].copy()
+
+    w_prune = w_prune / w_prune.sum()
+
+    N = n_prune.max() + 1
+    cdn_prune = np.zeros(N)
+    for card in range(N):
+        cdn_prune[card] = w_prune[n_prune == card].sum()
+
+    return GLMB_GMS_Data(tt_prune, w_prune, I_prune, n_prune, cdn_prune)
+
+
+def prune(upd: GLMB_GMS_Data,
+          hyp_threshold: float) -> GLMB_GMS_Data:
+    idxkeep = np.where(upd.w > hyp_threshold)[0]
+    return select(upd, idxkeep)
+
+
+def cap(upd: GLMB_GMS_Data,
+        H_max: int) -> GLMB_GMS_Data:
+    if len(upd.w) > H_max:
+        idxkeep = upd.w.argsort()[::-1][:H_max]
+        return select(upd, idxkeep)
+    else:
+        return upd
 
 
 class GLMB_GMS_Filter(GMSFilter):
@@ -103,7 +139,7 @@ class GLMB_GMS_Filter(GMSFilter):
                  H_bth=5,
                  H_sur=3000,
                  H_upd=3000,
-                 H_max=3000,
+                 H_max=30,
                  hyp_thres=1e-15) -> None:
         super().__init__(model,
                          L_max, elim_thres, merge_threshold,
@@ -114,7 +150,7 @@ class GLMB_GMS_Filter(GMSFilter):
         self.H_max = H_max
         self.hyp_thres = hyp_thres
 
-    def init(self):
+    def init(self) -> GLMB_GMS_Data:
         super().init()
         track_table = []
         w = np.ones(1)
@@ -124,7 +160,7 @@ class GLMB_GMS_Filter(GMSFilter):
         return GLMB_GMS_Data(track_table, w, I, n, cdn)
 
     def predict(self,
-                upd: GLMB_GMS_Data):
+                upd: GLMB_GMS_Data) -> GLMB_GMS_Data:
         # === Birth ===
 
         # Create birth tracks
@@ -169,8 +205,8 @@ class GLMB_GMS_Filter(GMSFilter):
                                                                 upd.track_table[tabsidx].gm.P)
 
             w_surv = upd.track_table[tabsidx].gm.w.copy()
-            m_surv = mtemp_predict[np.newaxis].copy()
-            P_surv = Ptemp_predict[np.newaxis].copy()
+            m_surv = mtemp_predict.copy()
+            P_surv = Ptemp_predict.copy()
 
             gm_surv = GaussianMixture(w_surv, m_surv, P_surv)
             l_surv = upd.track_table[tabsidx].l
@@ -195,6 +231,7 @@ class GLMB_GMS_Filter(GMSFilter):
                     + 0.5
                 )
                 spaths, nlcost = kshortestwrap_pred(neglogcostv, N)
+
                 # print(neglogcostv, N)
                 # print(spaths, nlcost)
                 # input()
@@ -245,7 +282,8 @@ class GLMB_GMS_Filter(GMSFilter):
         # print(pred.I)
         # input()
         pred = clean_predict(pred)
-        # print(pred)
+        # print(pred.w)
+        # input()
         # input()
 
         return pred
@@ -258,9 +296,6 @@ class GLMB_GMS_Filter(GMSFilter):
         for tabidx in range(len(pred.track_table)):
             m_tracks.append(pred.track_table[tabidx].gm.m)
             P_tracks.append(pred.track_table[tabidx].gm.P)
-
-        # print(m_tracks)
-        # input(P_tracks)
 
         m_tracks = np.vstack(m_tracks)
         P_tracks = np.vstack(P_tracks)
@@ -277,6 +312,8 @@ class GLMB_GMS_Filter(GMSFilter):
         cand_Z = self.gating(Z, pred) \
             if self.use_gating \
             else Z
+        # print(cand_Z)
+        # input()
 
         # == Update ==
 
@@ -292,6 +329,8 @@ class GLMB_GMS_Filter(GMSFilter):
             l = [x for x in pred.track_table[tabidx].l]
             ah = [x for x in pred.track_table[tabidx].ah] + [0]
             tt_upda[tabidx] = Track(gm, l, ah)
+        # print(tt_upda)
+        # input()
 
         # Updated tracks
         allcostm = np.zeros((N1, N2))
@@ -302,10 +341,16 @@ class GLMB_GMS_Filter(GMSFilter):
                                                               self.model.measurement_model.R,
                                                               pred.track_table[tabidx].gm.m,
                                                               pred.track_table[tabidx].gm.P)
+                # print(qz_temp)
+                # print(m_temp)
+                # print(P_temp)
+                # print('+++')
                 w_temp = qz_temp[0] * pred.track_table[tabidx].gm.w + EPS
+                # print(w_temp)
+                # input('===')
 
                 gm = GaussianMixture(w_temp / w_temp.sum(),
-                                     m_temp[0], P_temp[0])
+                                     m_temp[0], P_temp[[0]])
                 l = [x for x in pred.track_table[tabidx].l]
                 ah = pred.track_table[tabidx].ah + [emm]
 
@@ -313,6 +358,8 @@ class GLMB_GMS_Filter(GMSFilter):
                 tt_upda[stoidx] = Track(gm, l, ah)
 
                 allcostm[tabidx, emm] = w_temp.sum()
+        # print(allcostm)
+        # input()
 
         # Component update
         lambda_c = self.model.clutter_model.lambda_c
@@ -320,19 +367,27 @@ class GLMB_GMS_Filter(GMSFilter):
         pD = self.model.detection_model.get_probability()
 
         w_upda, I_upda, n_upda = [], [], []
-        if N2 == 0:
+        if N2 == 0:  # TODO: check this case
             w_upda = - lambda_c + pred.n * np.log(1 - pD) + np.log(pred.w)
             I_upda = [[xx for xx in x] for x in pred.I]
             n_upda = pred.n.copy()
         else:
-            runidx = 0
             for pidx in range(len(pred.w)):
                 if pred.n[pidx] == 0:
-                    w_upda.append(-lambda_c
-                                  + N2 * np.log(lambda_c * pdf_c)
-                                  + np.log(pred.w[pidx]))
-                    I_upda.append(pred.I[pidx])
-                    n_upda.append(pred.n[pidx])
+                    w_p = -lambda_c \
+                        + N2 * np.log(lambda_c * pdf_c) \
+                        + np.log(pred.w[pidx])
+                    I_p = [x for x in pred.I[pidx]]
+                    n_p = pred.n[pidx]
+
+                    # print(w_p)
+                    # print(I_p)
+                    # print(n_p)
+                    # input('===')
+
+                    w_upda.append(w_p)
+                    I_upda.append(I_p)
+                    n_upda.append(n_p)
                 else:
                     costm = pD / (1 - pD) * \
                         allcostm[pred.I[pidx]] / (lambda_c * pdf_c)
@@ -342,8 +397,11 @@ class GLMB_GMS_Filter(GMSFilter):
                             np.sqrt(pred.w[pidx]) / np.sum(np.sqrt(pred.w))
                             + 0.5)
                     uasses, nlcost = mbest_wrap(neglogcostm, N)
-                    # print(uasses, nlcost)
-                    # input()
+
+                    # if self.k == 2:
+                    #     print(neglogcostm, N)
+                    #     print(uasses, nlcost)
+                    #     input()
 
                     for hidx in range(len(nlcost)):
                         w_ph = -lambda_c \
@@ -351,15 +409,13 @@ class GLMB_GMS_Filter(GMSFilter):
                             + pred.n[pidx] * np.log(1 - pD) \
                             + np.log(pred.w[pidx]) \
                             - nlcost[hidx]
-                        # print(w_ph)
-                        # input()
-
                         I_ph = [N1 * (x + 1) + (y + 1) - 1
                                 for x, y in zip(uasses[hidx], pred.I[pidx])]
-                        # print(I_ph)
-                        # input()
-
                         n_ph = pred.n[pidx]
+                        # print(w_ph)
+                        # print(I_ph)
+                        # print(n_ph)
+                        # input('===')
 
                         w_upda.append(w_ph)
                         I_upda.append(I_ph)
@@ -371,11 +427,36 @@ class GLMB_GMS_Filter(GMSFilter):
         cdn_upda = np.zeros(n_upda.max() + 1)
         for card in range(cdn_upda.shape[0]):
             cdn_upda[card] = np.sum(w_upda[n_upda == card])
+        # print(tt_upda)
+        # print(w_upda)
+        # print(I_upda)
+        # print(n_upda)
+        # print(cdn_upda)
+        # input('====')
 
         upd = GLMB_GMS_Data(tt_upda, w_upda, I_upda, n_upda, cdn_upda)
         upd = clean_update(upd)
-        # print(len(upd.I))
+        # print(upd.track_table)
+        # print(upd.w)
         # print(upd.I)
+        # print(upd.n)
+        # print(upd.cdn)
+        # input('====')
+
+        upd = prune(upd, self.hyp_thres)
+        # print(upd.track_table)
+        # print(upd.w)
+        # print(upd.I)
+        # print(upd.n)
+        # print(upd.cdn)
+        # input('====')
+        upd = cap(upd, self.H_max)
+        # print(upd.track_table)
+        # print(upd.w)
+        # print(upd.I)
+        # print(upd.n)
+        # print(upd.cdn)
+        # input('====')
 
         return upd
 
