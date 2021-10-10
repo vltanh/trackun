@@ -278,6 +278,7 @@ class CPHD_GMS_Filter(GMSFilter):
         self.N_max = N_max
 
     def init(self):
+        super().init()
         w = np.array([0.])
         m = np.zeros((1, self.model.x_dim))
         P = np.eye(self.model.x_dim)[np.newaxis, :]

@@ -31,6 +31,7 @@ class PHD_GMS_Filter(GMSFilter):
                          use_gating, pG)
 
     def init(self):
+        super().init()
         w = np.array([1.])
         m = np.zeros((1, self.model.x_dim))
         P = np.eye(self.model.x_dim)[np.newaxis, :]

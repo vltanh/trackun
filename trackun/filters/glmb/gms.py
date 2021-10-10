@@ -139,7 +139,7 @@ class GLMB_GMS_Filter(GMSFilter):
                  H_bth=5,
                  H_sur=3000,
                  H_upd=3000,
-                 H_max=30,
+                 H_max=3000,
                  hyp_thres=1e-15) -> None:
         super().__init__(model,
                          L_max, elim_thres, merge_threshold,
@@ -460,5 +460,38 @@ class GLMB_GMS_Filter(GMSFilter):
 
         return upd
 
-    def visualizable_estimate(self, upd):
-        pass
+    # def visualizable_estimate(self, upd: GLMB_GMS_Data) -> GLMB_GMS_Data:
+    #     M = np.argmax(upd.cdn)
+    #     T = [None for _ in range(M)]
+    #     J = np.zeros((M, 2), dtype=np.int32)
+
+    #     idxcmp = np.argmax(upd.w * (upd.n == M))
+    #     for m in range(M):
+    #         idxptr = upd.I[idxcmp][m]
+    #         T[m] = [x for x in upd.track_table[idxptr].ah]
+    #         J[m] = upd.track_table[idxptr].l
+
+    #     H = [None for _ in range(M)]
+    #     for m in range(M):
+    #         H[m] = str(J[m, 0]) + '.' + str(J[m, 1])
+
+    def visualizable_estimate(self, upd: GLMB_GMS_Data) -> GLMB_GMS_Data:
+        M = np.argmax(upd.cdn)
+
+        ah = [None for _ in range(M)]
+        w = np.empty(M)
+        X = np.empty((M, self.model.motion_model.x_dim))
+        P = np.empty((M, self.model.motion_model.x_dim,
+                     self.model.motion_model.x_dim))
+        L = np.empty((M, 2), dtype=np.int32)
+
+        idxcmp = np.argmax(upd.w * (upd.n == M))
+        for m in range(M):
+            idxtrk = np.argmax(upd.track_table[upd.I[idxcmp][m]].gm.w)
+            w[m] = upd.track_table[upd.I[idxcmp][m]].gm.w[idxtrk].copy()
+            X[m] = upd.track_table[upd.I[idxcmp][m]].gm.m[idxtrk].copy()
+            P[m] = upd.track_table[upd.I[idxcmp][m]].gm.P[idxtrk].copy()
+            L[m] = upd.track_table[upd.I[idxcmp][m]].l
+            ah[m] = [x for x in upd.track_table[upd.I[idxcmp][m]].ah]
+
+        return Track(GaussianMixture(w, X, P), L, ah)
