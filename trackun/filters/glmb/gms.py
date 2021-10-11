@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List
+from typing import List, Tuple
 
 from trackun.filters.base import GMSFilter
 from trackun.common.gaussian_mixture import GaussianMixture
@@ -22,7 +22,7 @@ INF = np.inf
 @dataclass
 class Track:
     gm: GaussianMixture
-    l: List[int]
+    l: Tuple[int, int]
     ah: List[int]
 
 
@@ -30,7 +30,7 @@ class Track:
 class GLMB_GMS_Data:
     track_table: List[Track]
     w: np.ndarray
-    I: List[List[int]]
+    I: List[np.ndarray]
     n: np.ndarray
     cdn: np.ndarray
 
@@ -80,13 +80,11 @@ def kshortest_wrap(rs, k):
             paths[p] = []
         else:
             paths[p] = [x - 1 for x in paths[p][1:-1]]
-            paths[p] = _is[paths[p]].tolist()
+            paths[p] = _is[paths[p]]
     return paths, costs
 
 
 def logsumexp(w):
-    if np.all(w == -np.inf):
-        return -np.inf
     val = np.max(w)
     return np.log(np.sum(np.exp(w - val))) + val
 
@@ -114,18 +112,17 @@ def clean_predict(w, I, n) -> GLMB_GMS_Data:
 
 
 def clean_update(track_table: List[Track],
-                 I: List[List[int]]) -> GLMB_GMS_Data:
-    usedindicator = np.zeros(len(track_table), dtype=np.int32)
+                 I: List[np.ndarray]) -> GLMB_GMS_Data:
+    usedindicator = np.zeros(len(track_table), dtype=np.int64)
     for hidx in range(len(I)):
         usedindicator[I[hidx]] += 1
     trackcount = np.sum(usedindicator > 0)
 
-    newindices = np.zeros(len(track_table), dtype=np.ndarray)
+    newindices = np.zeros(len(track_table), dtype=np.int64)
     newindices[usedindicator > 0] = np.arange(1, trackcount + 1)
 
     tt_temp = [x for x, y in zip(track_table, usedindicator) if y > 0]
-    I_temp = [(newindices - 1)[I[hidx]].copy().tolist()
-              for hidx in range(len(I))]
+    I_temp = [(newindices - 1)[I[hidx]] for hidx in range(len(I))]
 
     return tt_temp, I_temp
 
@@ -187,8 +184,8 @@ class GLMB_GMS_Filter(GMSFilter):
         super().init()
         track_table = []
         w = np.ones(1)
-        I = [[]]
-        n = np.zeros(1).astype(np.int32)
+        I = [np.empty(0, dtype=np.int64)]
+        n = np.zeros(1).astype(np.int64)
         cdn = np.ones(1)
         return GLMB_GMS_Data(track_table, w, I, n, cdn)
 
@@ -214,7 +211,7 @@ class GLMB_GMS_Filter(GMSFilter):
         # Generate corresponding birth hypotheses
         w_birth = np.empty(len(nlcost))
         I_birth = []
-        n_birth = np.empty(len(nlcost), dtype=np.int32)
+        n_birth = np.empty(len(nlcost), dtype=np.int64)
         for hidx in range(len(nlcost)):
             w_birth[hidx] = np.log(1 - r_birth).sum() - nlcost[hidx]
             I_birth.append(bpaths[hidx])
@@ -264,17 +261,17 @@ class GLMB_GMS_Filter(GMSFilter):
                     spaths, nlcost = kshortest_wrap(neglogcostv, N)
 
                     # Generate corresponding surviving hypotheses
-                    w_p = upd.n[pidx] * np.log(1 - pS) + np.log(upd.w[pidx])
+                    w_p = upd.n[pidx] * np.log1p(-pS) + np.log(upd.w[pidx])
                     for hidx in range(len(nlcost)):
                         w_pd = w_p - nlcost[hidx]
-                        I_pd = [upd.I[pidx][x] for x in spaths[hidx]]
+                        I_pd = upd.I[pidx][spaths[hidx]]
                         n_pd = len(spaths[hidx])
 
                         w_surv.append(w_pd)
                         I_surv.append(I_pd)
                         n_surv.append(n_pd)
         w_surv = np.exp(w_surv - logsumexp(w_surv))
-        n_surv = np.array(n_surv).astype(np.int32)
+        n_surv = np.array(n_surv).astype(np.int64)
 
         # Combine birth and surviving tracks
         tt_pred = tt_birth + tt_surv
@@ -283,7 +280,7 @@ class GLMB_GMS_Filter(GMSFilter):
         w_pred = w_pred / w_pred.sum()
 
         I_pred = [
-            I_birth[bidx] + [x + len(tt_birth) for x in I_surv[sidx]]
+            np.hstack([I_birth[bidx], len(tt_birth) + I_surv[sidx]])
             for bidx in range(len(w_birth))
             for sidx in range(len(w_surv))
         ]
@@ -365,7 +362,7 @@ class GLMB_GMS_Filter(GMSFilter):
         pdf_c = self.model.clutter_model.pdf_c
         pD = self.model.detection_model.get_probability()
 
-        if N2 == 0:  # TODO: check this case
+        if N2 == 0:
             w_upda = -lambda_c + pred.n * np.log1p(-pD) + np.log(pred.w)
             I_upda = pred.I
             n_upda = pred.n
@@ -397,14 +394,13 @@ class GLMB_GMS_Filter(GMSFilter):
                                 + np.log(pred.w[pidx])
                         for hidx in range(len(nlcost)):
                             w_ph = w_p - nlcost[hidx]
-                            I_ph = [N1 * (x + 1) + (y + 1) - 1
-                                    for x, y in zip(uasses[hidx], pred.I[pidx])]
+                            I_ph = N1 * (uasses[hidx] + 1) + pred.I[pidx]
                             n_ph = pred.n[pidx]
 
                             w_upda.append(w_ph)
                             I_upda.append(I_ph)
                             n_upda.append(n_ph)
-            n_upda = np.array(n_upda).astype(np.int32)
+            n_upda = np.array(n_upda).astype(np.int64)
         w_upda = np.exp(w_upda - logsumexp(w_upda))
 
         cdn_upda = np.zeros(n_upda.max() + 1)
@@ -427,7 +423,7 @@ class GLMB_GMS_Filter(GMSFilter):
         X = np.empty((M, self.model.motion_model.x_dim))
         P = np.empty((M, self.model.motion_model.x_dim,
                      self.model.motion_model.x_dim))
-        L = np.empty((M, 2), dtype=np.int32)
+        L = np.empty((M, 2), dtype=np.int64)
 
         idxcmp = np.argmax(upd.w * (upd.n == M))
         for m in range(M):
@@ -442,7 +438,7 @@ class GLMB_GMS_Filter(GMSFilter):
         M = np.argmax(upd.cdn)
 
         X = np.empty((M, self.model.motion_model.x_dim))
-        L = np.empty((M, 2), dtype=np.int32)
+        L = np.empty((M, 2), dtype=np.int64)
 
         idxcmp = np.argmax(upd.w * (upd.n == M))
         for m in range(M):
