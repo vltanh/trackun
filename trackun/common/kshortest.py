@@ -7,26 +7,18 @@ EPS = np.finfo(np.float64).eps
 INF = np.inf
 
 
-def find(G):
-    head, tail = np.where(np.isfinite(G.T))
-    w = G.T[head, tail]
-    return tail, head, w
+def BFMSpathOT(G, r):
+    tail, head = np.where(np.isfinite(G))
+    W = G[tail, head]
 
-
-def Initialize(G):
-    tail, head, W = find(G)
     _, n = G.shape
     m = len(W)
     p = np.full(n, -1)
     D = np.full(n, np.inf)
-    return m, n, p, D, tail, head, W
 
-
-def BFMSpathOT(G, r):
-    m, n, p, D, tail, head, W = Initialize(G)
     p[r] = -1
     D[r] = 0
-    for i in range(n-1):
+    for _ in range(n-1):
         optimal = True
         for arc in range(m):
             u = tail[arc]
@@ -37,22 +29,24 @@ def BFMSpathOT(G, r):
                 p[v] = u
                 optimal = False
         if optimal:
-            return p, D, i
-    return p, D, i
+            break
+    return p, D
 
 
 def BFMSpathwrap(ncm, source, destination):
-    p, D, _ = BFMSpathOT(ncm, source)
-    dist = D[destination]
+    p, D = BFMSpathOT(ncm, source)
+
     pred = p
+    dist = D[destination]
 
     if np.isinf(dist):
         path = []
     else:
         path = [destination]
-        while path[0] != source:
-            path.insert(0, pred[path[0]])
-    return dist, path, pred
+        while path[-1] != source:
+            path.append(pred[path[-1]])
+        path = path[::-1]
+    return dist, path
 
 
 @dataclass
@@ -68,13 +62,13 @@ class Xcell:
     cost: np.ndarray
 
 
-def kShortestPath_any(netCostMatrix, source, destination, k_paths):
+def find_k_shortest_path(netCostMatrix, source, destination, k_paths):
     if not 0 <= source < netCostMatrix.shape[0] or not 0 < destination <= netCostMatrix.shape[0]:
         print('[WARNING] Source/Destination node is not part of the cost matrix.')
         return [], []
 
     k = 1
-    cost, path, _ = BFMSpathwrap(netCostMatrix, source, destination)
+    cost, path = BFMSpathwrap(netCostMatrix, source, destination)
 
     if len(path) == 0:
         return [], []
@@ -136,8 +130,9 @@ def kShortestPath_any(netCostMatrix, source, destination, k_paths):
             for i in range(len(sub_P) - 1):
                 cost_sub_P += netCostMatrix[sub_P[i], sub_P[i+1]]
 
-            c, dev_p, _ = BFMSpathwrap(temp_netCostMatrix, P_[
-                                       index_dev_vertex], destination)
+            c, dev_p = BFMSpathwrap(temp_netCostMatrix,
+                                    P_[index_dev_vertex],
+                                    destination)
             if len(dev_p):
                 path_number = path_number + 1
 
@@ -149,9 +144,6 @@ def kShortestPath_any(netCostMatrix, source, destination, k_paths):
 
                 size_X += 1
                 X.append(Xcell(path_number, path_t, cost_t))
-            else:
-                pass
-                # print('[WARNING] Empty dev_p!')
 
         if size_X > 0:
             shortestXcost = X[0].cost
@@ -165,45 +157,10 @@ def kShortestPath_any(netCostMatrix, source, destination, k_paths):
             k += 1
             shortestPaths.append(P[current_P].path)
             totalCosts.append(P[current_P].cost)
-        else:
-            pass
     return shortestPaths, totalCosts
 
 
-def kshortestwrap_pred(rs, k):
-    if k == 0:
-        return [], []
-    ns = len(rs)
-    _is = np.argsort(-rs)
-    ds = rs[_is]
-
-    CM = np.full((ns, ns), INF)
-    for i in range(ns):
-        CM[:i, i] = ds[i]
-
-    CMPad = np.full((ns + 2, ns + 2), INF)
-    CMPad[0, 1:-1] = ds
-    CMPad[0, -1] = 0.
-    CMPad[1:-1, -1] = 0.
-    CMPad[1:-1, 1:-1] = CM
-
-    paths, costs = kShortestPath_any(CMPad, 0, ns + 1, k)
-
-    for p in range(len(paths)):
-        if np.array_equal(paths[p], np.array([1, ns + 2])):
-            paths[p] = []
-        else:
-            paths[p] = [x - 1 for x in paths[p][1:-1]]
-            paths[p] = _is[paths[p]].tolist()
-    return paths, costs
-
-
 if __name__ == '__main__':
-    rs = 2 * np.random.random(4) - 1
-    print(rs)
-    paths, costs = kshortestwrap_pred(rs, 100)
-    print(paths, costs)
-
     C = np.array([
         [INF, 3, 2, INF, INF, INF],
         [INF, INF, INF, 4, INF, INF],
@@ -212,5 +169,5 @@ if __name__ == '__main__':
         [INF, INF, INF, INF, INF, 2],
         [INF, INF, INF, INF, INF, INF]
     ])
-    paths, cost = kShortestPath_any(C, 0, 5, 100)
+    paths, cost = find_k_shortest_path(C, 0, 5, 100)
     print(paths, cost)
