@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 import os
 
-COLOR = ['green', 'purple']
+COLOR = ['green', 'purple', 'red']
 
 
 def prepare_outdir(output_dir):

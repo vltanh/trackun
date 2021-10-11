@@ -1,10 +1,11 @@
-import pickle
 from examples.utils import gen_model, gen_filter
 from examples.visualize import visualize
 
+import pickle
 from time import time
 import argparse
 
+from tqdm import tqdm
 import numpy as np
 np.random.seed(3698)
 
@@ -62,17 +63,12 @@ print('Begin filtering...')
 Zs = obs.Z
 ests = dict()
 for n, f in zip(filter_ids, filters):
-    start = time()
-
     upds_k = f.init()
     ests[n] = []
-    for Z in Zs:
+    for Z in tqdm(Zs):
         upds_k = f.step(Z, upds_k)
         ests_k = f.visualizable_estimate(upds_k)
         ests[n].append(model.gen_vis_obj(ests_k))
-    elapsed = time() - start
-
-    print(f'[{n}] Done! Took {elapsed} (s)')
 print('Filtering done!')
 print('================')
 
