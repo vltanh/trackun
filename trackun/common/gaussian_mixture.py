@@ -1,9 +1,6 @@
-from dataclasses import dataclass
-
 import numpy as np
 import numpy.linalg as la
 from numpy.random import multivariate_normal as randmvn
-import numba
 
 
 class GaussianMixture:

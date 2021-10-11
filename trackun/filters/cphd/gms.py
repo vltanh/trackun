@@ -6,7 +6,6 @@ from trackun.common.kalman_filter import KalmanFilter
 from trackun.common.gating import EllipsoidallGating
 
 import numpy as np
-import numba
 
 __all__ = [
     'CPHD_GMS_Data',
@@ -20,7 +19,6 @@ class CPHD_GMS_Data:
     c: np.ndarray
 
 
-# @numba.jit(nopython=True)
 def esf(Z):
     n_z = len(Z)
     if n_z == 0:
@@ -62,7 +60,6 @@ def esf_batch(Z):
     return F[i_nminus]
 
 
-# @numba.jit(nopython=True)
 def predict_cardinality(N_max, P_S, sum_w_birth, c_upds_k):
     aux = np.zeros(N_max + 1)
     aux[1:] = np.cumsum(np.log(np.arange(1, N_max + 1)))
@@ -135,7 +132,6 @@ def predict_cardinality(N_max, P_S, sum_w_birth, c_upds_k):
     return c_preds_k
 
 
-# @numba.jit(nopython=True)
 def compute_upsilon1_D_row(N2, n,
                            lambda_c, P_D,
                            log_sum_w_preds_k, esfvals_D,
@@ -169,7 +165,6 @@ def compute_upsilon1_D_row(N2, n,
     return (esfvals_D[:N + 1].T * terms1_D).sum(1)
 
 
-# @numba.jit(nopython=True)
 def compute_upsilon1_E_elem(N2, n,
                             lambda_c, P_D,
                             log_sum_w_preds_k, esfvals_E,
@@ -202,7 +197,6 @@ def compute_upsilon1_E_elem(N2, n,
     return (terms1_E * esfvals_E[:N + 1]).sum()
 
 
-# @numba.jit(nopython=True)
 def compute_upsilon0_E_elem(N2, n,
                             lambda_c, P_D,
                             log_sum_w_preds_k, esfvals_E,
@@ -233,7 +227,6 @@ def compute_upsilon0_E_elem(N2, n,
     return (terms0_E * esfvals_E[:N+1]).sum()
 
 
-# @numba.jit(nopython=True)
 def compute_upsilons(N_max, N2, lambda_c, P_D, w_preds_k, esfvals_E, esfvals_D):
     upsilon0_E = np.zeros(N_max + 1)
     upsilon1_E = np.zeros(N_max + 1)
