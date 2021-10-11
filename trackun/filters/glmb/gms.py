@@ -55,9 +55,10 @@ def mbest_wrap(P, m):
     return assignments, costs
 
 
-def kshortestwrap_pred(rs, k):
+def kshortest_wrap(rs, k):
     if k == 0:
         return [], []
+
     ns = len(rs)
     _is = np.argsort(-rs)
     ds = rs[_is]
@@ -208,7 +209,7 @@ class GLMB_GMS_Filter(GMSFilter):
         r_birth = self.model.birth_model.rs
         costv = r_birth / (1 - r_birth)
         neglogcostv = -np.log(costv)
-        bpaths, nlcost = kshortestwrap_pred(neglogcostv, self.H_bth)
+        bpaths, nlcost = kshortest_wrap(neglogcostv, self.H_bth)
 
         # Generate corresponding birth hypotheses
         w_birth = np.empty(len(nlcost))
@@ -219,11 +220,6 @@ class GLMB_GMS_Filter(GMSFilter):
             I_birth.append(bpaths[hidx])
             n_birth[hidx] = len(bpaths[hidx])
         w_birth = np.exp(w_birth - logsumexp(w_birth))
-
-        # Extract cardinality distribution
-        # cdn_birth = np.zeros(n_birth.max() + 1)
-        # for card in range(cdn_birth.shape[0]):
-        #     cdn_birth[card] = np.sum(w_birth[n_birth == card])
 
         # === Survive ===
 
@@ -246,63 +242,54 @@ class GLMB_GMS_Filter(GMSFilter):
 
             tt_surv[tabsidx] = Track(gm_surv, l_surv, ah_surv)
 
+        pS = self.model.survival_model.get_probability()
+
         w_surv, I_surv, n_surv = [], [], []
         for pidx in range(len(upd.w)):
-            if upd.n[pidx] == 0:  # TODO: check this case
+            if upd.n[pidx] == 0:
                 w_surv.append(np.log(upd.w[pidx]))
                 I_surv.append(upd.I[pidx])
                 n_surv.append(upd.n[pidx])
             else:
                 # Calculate best surviving hypotheses
-                pS = self.model.survival_model.get_probability()
-                costv = pS / (1 - pS) * np.ones(upd.n[pidx])
-                neglogcostv = -np.log(costv)
                 N = int(
-                    self.H_sur
-                    * np.sqrt(upd.w[pidx]) / np.sum(np.sqrt(upd.w))
+                    self.H_sur * np.sqrt(upd.w[pidx]) / np.sum(np.sqrt(upd.w))
                     + 0.5
                 )
-                spaths, nlcost = kshortestwrap_pred(neglogcostv, N)
 
-                # Generate corresponding surviving hypotheses
-                w_p = upd.n[pidx] * np.log(1 - pS) + np.log(upd.w[pidx])
-                for hidx in range(len(nlcost)):
-                    w_pd = w_p - nlcost[hidx]
-                    I_pd = [upd.I[pidx][x] for x in spaths[hidx]]
-                    n_pd = len(spaths[hidx])
+                if N > 0:
+                    costv = pS / (1 - pS) * np.ones(upd.n[pidx])
+                    neglogcostv = -np.log(costv)
 
-                    w_surv.append(w_pd)
-                    I_surv.append(I_pd)
-                    n_surv.append(n_pd)
+                    spaths, nlcost = kshortest_wrap(neglogcostv, N)
+
+                    # Generate corresponding surviving hypotheses
+                    w_p = upd.n[pidx] * np.log(1 - pS) + np.log(upd.w[pidx])
+                    for hidx in range(len(nlcost)):
+                        w_pd = w_p - nlcost[hidx]
+                        I_pd = [upd.I[pidx][x] for x in spaths[hidx]]
+                        n_pd = len(spaths[hidx])
+
+                        w_surv.append(w_pd)
+                        I_surv.append(I_pd)
+                        n_surv.append(n_pd)
         w_surv = np.exp(w_surv - logsumexp(w_surv))
         n_surv = np.array(n_surv).astype(np.int32)
 
-        # Extract cardinality distribution
-        # cdn_surv = np.zeros(n_surv.max() + 1)
-        # for card in range(cdn_surv.shape[0]):
-        #     cdn_surv[card] = np.sum(w_surv[n_surv == card])
-
+        # Combine birth and surviving tracks
         tt_pred = tt_birth + tt_surv
 
-        N = len(w_birth) * len(w_surv)
-        w_pred = np.empty(N)
-        I_pred = []
-        n_pred = np.empty(N, dtype=np.int32)
-        for bidx in range(len(w_birth)):
-            for sidx in range(len(w_surv)):
-                hidx = bidx * len(w_surv) + sidx
-
-                w_bs = w_birth[bidx] * w_surv[sidx]
-                I_bs = I_birth[bidx] + \
-                    [x + len(tt_birth) for x in I_surv[sidx]]
-                n_bs = n_birth[bidx] + n_surv[sidx]
-
-                w_pred[hidx] = w_bs
-                I_pred.append(I_bs)
-                n_pred[hidx] = n_bs
+        w_pred = (w_birth[:, np.newaxis] * w_surv[np.newaxis, :]).reshape(-1)
         w_pred = w_pred / w_pred.sum()
 
-        # Extract cardinality distribution
+        I_pred = [
+            I_birth[bidx] + [x + len(tt_birth) for x in I_surv[sidx]]
+            for bidx in range(len(w_birth))
+            for sidx in range(len(w_surv))
+        ]
+
+        n_pred = (n_birth[:, np.newaxis] + n_surv[np.newaxis, :]).reshape(-1)
+
         cdn_pred = np.zeros(n_pred.max() + 1)
         for card in range(cdn_pred.shape[0]):
             cdn_pred[card] = np.sum(w_pred[n_pred == card])
@@ -378,12 +365,12 @@ class GLMB_GMS_Filter(GMSFilter):
         pdf_c = self.model.clutter_model.pdf_c
         pD = self.model.detection_model.get_probability()
 
-        w_upda, I_upda, n_upda = [], [], []
         if N2 == 0:  # TODO: check this case
             w_upda = -lambda_c + pred.n * np.log1p(-pD) + np.log(pred.w)
             I_upda = pred.I
             n_upda = pred.n
         else:
+            w_upda, I_upda, n_upda = [], [], []
             for pidx in range(len(pred.w)):
                 w = -lambda_c + N2 * np.log(lambda_c * pdf_c)
                 if pred.n[pidx] == 0:
@@ -417,9 +404,8 @@ class GLMB_GMS_Filter(GMSFilter):
                             w_upda.append(w_ph)
                             I_upda.append(I_ph)
                             n_upda.append(n_ph)
-
+            n_upda = np.array(n_upda).astype(np.int32)
         w_upda = np.exp(w_upda - logsumexp(w_upda))
-        n_upda = np.array(n_upda)
 
         cdn_upda = np.zeros(n_upda.max() + 1)
         for card in range(cdn_upda.shape[0]):
@@ -433,21 +419,6 @@ class GLMB_GMS_Filter(GMSFilter):
 
         return upd
 
-    # def visualizable_estimate(self, upd: GLMB_GMS_Data) -> GLMB_GMS_Data:
-    #     M = np.argmax(upd.cdn)
-    #     T = [None for _ in range(M)]
-    #     J = np.zeros((M, 2), dtype=np.int32)
-
-    #     idxcmp = np.argmax(upd.w * (upd.n == M))
-    #     for m in range(M):
-    #         idxptr = upd.I[idxcmp][m]
-    #         T[m] = [x for x in upd.track_table[idxptr].ah]
-    #         J[m] = upd.track_table[idxptr].l
-
-    #     H = [None for _ in range(M)]
-    #     for m in range(M):
-    #         H[m] = str(J[m, 0]) + '.' + str(J[m, 1])
-
     def visualizable_estimate(self, upd: GLMB_GMS_Data) -> Track:
         M = np.argmax(upd.cdn)
 
@@ -460,15 +431,10 @@ class GLMB_GMS_Filter(GMSFilter):
 
         idxcmp = np.argmax(upd.w * (upd.n == M))
         for m in range(M):
-            idxtrk = np.argmax(upd.track_table[upd.I[idxcmp][m]].gm.w)
-            w[m] = upd.track_table[upd.I[idxcmp][m]].gm.w[idxtrk].copy()
-            X[m] = upd.track_table[upd.I[idxcmp][m]].gm.m[idxtrk].copy()
-            P[m] = upd.track_table[upd.I[idxcmp][m]].gm.P[idxtrk].copy()
+            w[m], X[m], P[m] = \
+                upd.track_table[upd.I[idxcmp][m]].gm.cap(1).unpack()
             L[m] = upd.track_table[upd.I[idxcmp][m]].l
-            ah[m] = [x for x in upd.track_table[upd.I[idxcmp][m]].ah]
-        # print(L.T)
-        # print(ah)
-        # input()
+            ah[m] = upd.track_table[upd.I[idxcmp][m]].ah
 
         return Track(GaussianMixture(w, X, P), L, ah)
 
