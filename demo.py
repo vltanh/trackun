@@ -20,7 +20,7 @@ parser.add_argument('-m', '--model',
 parser.add_argument('-f', '--filters',
                     nargs='+',
                     choices=['GM-Bernoulli', 'GM-PHD',
-                             'GM-CPHD', 'GM-GLMB', 'SMC-PHD'],
+                             'GM-CPHD', 'GM-GLMB', 'GM-LMB', 'SMC-PHD'],
                     required=True,
                     help='filter names')
 parser.add_argument('-o', '--output',

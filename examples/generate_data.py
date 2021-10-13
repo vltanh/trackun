@@ -30,7 +30,7 @@ class Truth:
 
     def gen_trajectory(self, k):
         xys = []
-        for track_idx in range(self.total_tracks):
+        for track_idx in range(1, self.total_tracks + 1):
             x_p = [x[self.track_list[t] == track_idx, 0]
                    for t, x in enumerate(self.X) if t <= k]
             y_p = [x[self.track_list[t] == track_idx, 2]
