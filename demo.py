@@ -2,7 +2,6 @@ from examples.utils import gen_model, gen_filter
 from examples.visualize import visualize
 
 import pickle
-from time import time
 import argparse
 
 from tqdm import tqdm

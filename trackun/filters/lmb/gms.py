@@ -247,7 +247,7 @@ class LMB_GMS_Filter(GMSFilter):
         # Combine birth and surviving tracks
         tt_pred = tt_birth + tt_surv
 
-        r_pred = np.hstack([r_birth, r_surv])
+        # r_pred = np.hstack([r_birth, r_surv])
 
         w_pred = (w_birth[:, np.newaxis] * w_surv[np.newaxis, :]).reshape(-1)
         w_pred = w_pred / w_pred.sum()
@@ -260,12 +260,12 @@ class LMB_GMS_Filter(GMSFilter):
 
         n_pred = (n_birth[:, np.newaxis] + n_surv[np.newaxis, :]).reshape(-1)
 
-        cdn_pred = np.zeros(n_pred.max() + 1)
-        for card in range(cdn_pred.shape[0]):
-            cdn_pred[card] = np.sum(w_pred[n_pred == card])
+        # cdn_pred = np.zeros(n_pred.max() + 1)
+        # for card in range(cdn_pred.shape[0]):
+        #     cdn_pred[card] = np.sum(w_pred[n_pred == card])
 
         # w_pred, I_pred, n_pred = clean_predict(w_pred, I_pred, n_pred)
-        pred = LMB_GMS_Data(tt_pred, r_pred, w_pred, I_pred, n_pred, cdn_pred)
+        pred = LMB_GMS_Data(tt_pred, None, w_pred, I_pred, n_pred, None)
         # print(pred)
         # input()
 
@@ -382,14 +382,14 @@ class LMB_GMS_Filter(GMSFilter):
         # print(n_upda)
         # input()
 
-        cdn_upda = np.zeros(n_upda.max() + 1)
-        for card in range(cdn_upda.shape[0]):
-            cdn_upda[card] = np.sum(w_upda[n_upda == card])
+        # cdn_upda = np.zeros(n_upda.max() + 1)
+        # for card in range(cdn_upda.shape[0]):
+        #     cdn_upda[card] = np.sum(w_upda[n_upda == card])
         # print(cdn_upda)
         # input()
 
         # GLMB to LMB
-        lmat = np.zeros((len(tt_upda), 2), dtype=np.int64)
+        lmat = np.empty((len(tt_upda), 2), dtype=np.int64)
         for tabidx in range(len(tt_upda)):
             lmat[tabidx] = tt_upda[tabidx].l
         # print(lmat)
@@ -446,7 +446,7 @@ class LMB_GMS_Filter(GMSFilter):
                     self.merge_threshold, self.L_max)
 
         upd = LMB_GMS_Data(upd.track_table, upd.r,
-                           w_upda, I_upda, n_upda, cdn_upda)
+                           None, None, None, None)
 
         return upd
 

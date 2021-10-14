@@ -123,7 +123,7 @@ def merge_components(ws, xs, Ps):
     x_merge = xs.T @ ws / w_merge
 
     d = xs - x_merge
-    var = d[:, :, np.newaxis] @ d[:, np.newaxis, :]
-    P_merge = ((Ps + var).transpose(1, 2, 0) * ws).sum(-1) / w_merge
+    # var = d[:, :, np.newaxis] @ d[:, np.newaxis, :]
+    P_merge = ((Ps).transpose(1, 2, 0) * ws).sum(-1) / w_merge
 
     return w_merge, x_merge, P_merge

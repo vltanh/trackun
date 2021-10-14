@@ -4,6 +4,8 @@ A Python package for (multiple) object tracking using recursive Bayesian filteri
 
 ## **Demo**
 
+*Note*: You can find more in [images](images).
+
 **Example 1**: GM-Bernoulli filter for single-object tracking on Constant Velocity with Gaussian noise model
 
 ```bash
@@ -13,7 +15,7 @@ python demo.py -s -m linear_gaussian -f GM-Bernoulli -o vis/output
 <details>
   <summary>Click to expand</summary>
 
-![Examples of GM-Bernoulli filter](images/gm-bernoulli.gif)
+![Examples of GM-Bernoulli filter](images/gms-bernoulli.gif)
 
 </details>
 
@@ -26,7 +28,20 @@ python demo.py -m linear_gaussian -f GM-PHD GM-CPHD -o vis/output
 <details>
   <summary>Click to expand</summary>
 
-![Examples of GM-PHD and GM-CPHD filter](images/gm-phd-cphd.gif)
+![Examples of GM-PHD and GM-CPHD filter](images/gms-phd-cphd.gif)
+
+</details>
+
+**Example 3**: GM-LMB filter for multi-object tracking on Constant Velocity with Gaussian noise model
+
+```bash
+python demo.py -m linear_gaussian -f GM-LMB -o vis/output
+```
+
+<details>
+  <summary>Click to expand</summary>
+
+![Examples of GM-PHD and GM-CPHD filter](images/gms-lmb.gif)
 
 </details>
 

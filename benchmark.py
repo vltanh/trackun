@@ -17,7 +17,7 @@ parser.add_argument('-m', '--model',
                     help='motion/measurement model to be used')
 parser.add_argument('-f', '--filter',
                     choices=['GM-Bernoulli', 'GM-PHD',
-                             'GM-CPHD', 'GM-GLMB', 'SMC-PHD'],
+                             'GM-CPHD', 'GM-GLMB', 'GM-LMB', 'SMC-PHD'],
                     required=True,
                     help='filter to be used')
 parser.add_argument('-n', '--nruns',
