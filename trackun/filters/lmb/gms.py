@@ -177,13 +177,13 @@ class LMB_GMS_Filter(GMSFilter):
                  elim_thres=1e-5,
                  merge_threshold=4,
                  use_gating=True,
-                 pG=0.9999999,
+                 pG=0.99,
                  T_max=100,
                  track_threshold=1e-3,
                  H_bth=5,
-                 H_sur=3000,
-                 H_upd=3000,
-                 H_max=3000,
+                 H_sur=500,
+                 H_upd=500,
+                 H_max=500,
                  hyp_thres=1e-15) -> None:
         super().__init__(model,
                          L_max, elim_thres, merge_threshold,
@@ -470,3 +470,19 @@ class LMB_GMS_Filter(GMSFilter):
             ah[m] = track.ah
 
         return Track(GaussianMixture(w, X, P), L, ah)
+
+    def estimate(self, upd: LMB_GMS_Data) -> Track:
+        cdn = np.prod(1 - upd.r) * esf(upd.r / (1 - upd.r))
+        M = np.argmax(cdn)
+        M = min(len(upd.r), M)
+
+        X = np.empty((M, self.model.motion_model.x_dim))
+        L = np.empty((M, 2), dtype=np.int64)
+
+        idxcmp = upd.r.argsort()[::-1]
+        for m in range(M):
+            track = upd.track_table[idxcmp[m]]
+            _, X[m], _ = track.gm.cap(1).unpack()
+            L[m] = track.l
+
+        return X, L
