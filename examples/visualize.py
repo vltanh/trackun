@@ -17,9 +17,10 @@ def prepare_outdir(output_dir):
             choice = input('Proceed [Y/n]? ')
             if choice == 'n':
                 print('Cancelled.')
-                return
+                return False
     else:
         os.makedirs(output_dir)
+    return True
 
 
 def draw_ellipse(position, covariance, ax=None, **kwargs):
@@ -71,7 +72,9 @@ def visualize_model(model, ax):
 def visualize(ests, model=None, obs=None, truth=None,
               out_dir=None):
     if out_dir is not None:
-        prepare_outdir(out_dir)
+        cont = prepare_outdir(out_dir)
+        if not cont:
+            return
 
     if truth is not None:
         truth_cnt = []

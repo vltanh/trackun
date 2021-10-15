@@ -18,8 +18,13 @@ parser.add_argument('-m', '--model',
                     help='motion/measurement model')
 parser.add_argument('-f', '--filters',
                     nargs='+',
-                    choices=['GM-Bernoulli', 'GM-PHD',
-                             'GM-CPHD', 'GM-GLMB', 'GM-LMB', 'SMC-PHD'],
+                    choices=[
+                        'GM-Bernoulli',
+                        'GM-PHD', 'SMC-PHD',
+                        'GM-CPHD',
+                        'GM-GLMB', 'GM-JointGLMB',
+                        'GM-LMB',
+                    ],
                     required=True,
                     help='filter names')
 parser.add_argument('-o', '--output',
