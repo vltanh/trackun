@@ -4,7 +4,7 @@ import numpy.linalg as la
 
 class EllipsoidallGating:
     @staticmethod
-    def filter(zs, gamma, H, R, ms, Ps):
+    def filter_idx(zs, gamma, H, R, ms, Ps):
         Ss = H @ Ps @ H.T + R
 
         z_preds = ms @ H.T
@@ -14,5 +14,10 @@ class EllipsoidallGating:
         ds = np.diagonal(ds, axis1=1, axis2=2)
 
         mask = (ds < gamma).any(0)
+        indices = np.where(mask)[0]
+        return indices
 
-        return zs[mask]
+    @staticmethod
+    def filter(zs, gamma, H, R, ms, Ps):
+        indices = EllipsoidallGating.filter_idx(zs, gamma, H, R, ms, Ps)
+        return zs[indices]
