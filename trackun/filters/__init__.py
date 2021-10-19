@@ -4,3 +4,4 @@ from .bernoulli import *
 from .glmb import *
 from .lmb import *
 from .jointglmb import *
+from .jointlmb import *

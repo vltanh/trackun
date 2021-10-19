@@ -33,6 +33,8 @@ def gen_filter(filter_id, model):
         filt = JointGLMB_GMS_Filter(model)
     elif filter_id == 'GM-LMB':
         filt = LMB_GMS_Filter(model)
+    elif filter_id == 'GM-JointLMB':
+        filt = JointLMB_GMS_Filter(model)
     else:
         raise Exception('Unknown filter name.')
     return filt

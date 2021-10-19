@@ -21,7 +21,7 @@ parser.add_argument('-f', '--filter',
                         'GM-PHD', 'SMC-PHD',
                         'GM-CPHD',
                         'GM-GLMB', 'GM-JointGLMB',
-                        'GM-LMB',
+                        'GM-LMB', 'GM-JointLMB',
                     ],
                     required=True,
                     help='filter to be used')
