@@ -35,6 +35,8 @@ def gen_filter(filter_id, model):
         filt = LMB_GMS_Filter(model)
     elif filter_id == 'GM-JointLMB':
         filt = JointLMB_GMS_Filter(model)
+    elif filter_id == 'SORT':
+        filt = SORT(model)
     else:
         raise Exception('Unknown filter name.')
     return filt

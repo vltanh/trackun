@@ -24,6 +24,7 @@ parser.add_argument('-f', '--filters',
                         'GM-CPHD',
                         'GM-GLMB', 'GM-JointGLMB',
                         'GM-LMB', 'GM-JointLMB',
+                        'SORT',
                     ],
                     required=True,
                     help='filter names')
