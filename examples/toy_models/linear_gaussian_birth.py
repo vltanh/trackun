@@ -34,12 +34,12 @@ class LinearGaussianWithBirthEstimation:
         if hasattr(self, 'label'):
             for i in range(len(self.label)):
                 ax.scatter(self.gm.m[i, 0], self.gm.m[i, 2],
-                           c=[COLOR[self.label[i]]], s=10)
+                           c=[COLOR[self.label[i] % len(COLOR)]], s=10)
                 draw_ellipse(self.gm.m[i][[0, 2]], self.gm.P[i][[0, 2]][:, [0, 2]],
-                             ax, color=COLOR[self.label[i]], fill=None, linestyle='solid')
+                             ax, color=COLOR[self.label[i] % len(COLOR)], fill=None, linestyle='solid')
                 ax.arrow(*self.gm.m[i][[0, 2]], *3 *
                          self.gm.m[i][[1, 3]],
-                         color=COLOR[self.label[i]])
+                         color=COLOR[self.label[i] % len(COLOR)])
 
         else:
             plot_2d_gaussian_mixture(self.gm, ax,
