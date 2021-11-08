@@ -1,14 +1,10 @@
 from dataclasses import dataclass
 from typing import List, Tuple
-from numpy.lib.arraysetops import unique
-
-from numpy.lib.twodim_base import mask_indices, tril_indices
 
 from trackun.filters.base import GMSFilter
 from trackun.common.gaussian_mixture import GaussianMixture
 from trackun.common.kalman_filter import KalmanFilter
 from trackun.common.gating import EllipsoidallGating
-from trackun.common.kshortest import find_k_shortest_path
 from trackun.common.murty import find_m_best_assignment
 
 import numpy as np
@@ -25,26 +21,6 @@ INF = np.inf
 def logsumexp(w):
     val = np.max(w)
     return np.log(np.sum(np.exp(w - val))) + val
-
-
-def mbest_wrap_(P, m):
-    n1, n2 = P.shape
-
-    # Padding
-    P0 = np.zeros((n1, n2 + n1))
-    P0[:, :n2] = P
-
-    # Murty
-    assignments, costs = find_m_best_assignment(P0, m)
-    costs = costs.reshape(-1)
-
-    # Remove padding
-    assignments = assignments[:, :n1]
-
-    # Set clututer
-    assignments[assignments >= n2] = -1
-
-    return assignments, costs
 
 
 def mbest_wrap(P0, m):
@@ -408,3 +384,16 @@ class JointGLMB_GMS_Filter(GMSFilter):
             ah[m] = upd.track_table[upd.I[idxcmp][m]].ah
 
         return Track(GaussianMixture(w, X, P), L, ah)
+
+    def estimate(self, upd: JointGLMB_GMS_Data):
+        M = np.argmax(upd.cdn)
+        X = np.empty((M, self.model.motion_model.x_dim))
+        L = np.empty((M, 2), dtype=np.int64)
+
+        idxcmp = np.argmax(upd.w * (upd.n == M))
+        for m in range(M):
+            _, X[m], _ = \
+                upd.track_table[upd.I[idxcmp][m]].gm.cap(1).unpack()
+            L[m] = upd.track_table[upd.I[idxcmp][m]].l
+
+        return X, L

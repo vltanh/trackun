@@ -181,10 +181,9 @@ class LMB_GMS_Filter(GMSFilter):
                  T_max=100,
                  track_threshold=1e-3,
                  H_bth=5,
-                 H_sur=500,
-                 H_upd=500,
-                 H_max=500,
-                 hyp_thres=1e-15) -> None:
+                 H_sur=5,
+                 H_upd=50,
+                 H_max=50) -> None:
         super().__init__(model,
                          L_max, elim_thres, merge_threshold,
                          use_gating, pG)
@@ -195,7 +194,6 @@ class LMB_GMS_Filter(GMSFilter):
         self.H_sur = H_sur
         self.H_upd = H_upd
         self.H_max = H_max
-        self.hyp_thres = hyp_thres
 
     def init(self) -> LMB_GMS_Data:
         super().init()
@@ -403,9 +401,11 @@ class LMB_GMS_Filter(GMSFilter):
         # print(ic)
         # input()
 
-        w_upda_new = [[] for _ in range(len(cu))]
-        m_upda_new = [[] for _ in range(len(cu))]
-        P_upda_new = [[] for _ in range(len(cu))]
+        w_upda_new = [[np.empty(0)] for _ in range(len(cu))]
+        m_upda_new = [[np.empty((0, self.model.x_dim))]
+                      for _ in range(len(cu))]
+        P_upda_new = [[np.empty((0, self.model.x_dim, self.model.x_dim))]
+                      for _ in range(len(cu))]
         for hidx in range(len(w_upda)):
             for t in range(n_upda[hidx]):
                 trkidx = I_upda[hidx][t]
@@ -439,11 +439,10 @@ class LMB_GMS_Filter(GMSFilter):
         upd = cap(upd, self.T_max)
 
         for i in range(len(upd.track_table)):
-            upd.track_table[i].gm = \
-                upd.track_table[i].gm.prune(self.elim_threshold)
-            upd.track_table[i].gm = \
-                upd.track_table[i].gm.merge_and_cap(
-                    self.merge_threshold, self.L_max)
+            upd.track_table[i].gm = upd.track_table[i].gm.prune(
+                self.elim_threshold)
+            upd.track_table[i].gm = upd.track_table[i].gm.merge_and_cap(
+                self.merge_threshold, self.L_max)
 
         upd = LMB_GMS_Data(upd.track_table, upd.r,
                            None, None, None, None)
@@ -459,7 +458,7 @@ class LMB_GMS_Filter(GMSFilter):
         w = np.empty(M)
         X = np.empty((M, self.model.motion_model.x_dim))
         P = np.empty((M, self.model.motion_model.x_dim,
-                     self.model.motion_model.x_dim))
+                      self.model.motion_model.x_dim))
         L = np.empty((M, 2), dtype=np.int64)
 
         idxcmp = upd.r.argsort()[::-1]
@@ -471,7 +470,7 @@ class LMB_GMS_Filter(GMSFilter):
 
         return Track(GaussianMixture(w, X, P), L, ah)
 
-    def estimate(self, upd: LMB_GMS_Data) -> Track:
+    def estimate(self, upd: LMB_GMS_Data):
         cdn = np.prod(1 - upd.r) * esf(upd.r / (1 - upd.r))
         M = np.argmax(cdn)
         M = min(len(upd.r), M)

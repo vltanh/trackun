@@ -143,7 +143,7 @@ class JointLMB_GMS_Filter(GMSFilter):
                  pG=0.9999999,
                  T_max=100,
                  track_threshold=1e-3,
-                 H_upd=3000) -> None:
+                 H_upd=50) -> None:
         super().__init__(model,
                          L_max, elim_thres, merge_threshold,
                          use_gating, pG)
